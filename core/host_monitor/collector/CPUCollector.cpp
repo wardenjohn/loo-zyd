@@ -27,6 +27,9 @@
 #include "host_monitor/SystemInformationTools.h"
 #include "logger/Logger.h"
 
+#include <execinfo.h>  // 调用栈相关头文件
+#include <unistd.h>
+
 namespace logtail {
 
 const std::string CPUCollector::sName = "cpu";
@@ -34,6 +37,7 @@ const std::string kMetricLabelCPU = "cpu";
 const std::string kMetricLabelMode = "mode";
 
 bool CPUCollector::Collect(const HostMonitorTimerEvent::CollectConfig& collectConfig, PipelineEventGroup* group) {
+    std::cout << "hello world" << std::endl;
     if (group == nullptr) {
         return false;
     }
@@ -47,9 +51,9 @@ bool CPUCollector::Collect(const HostMonitorTimerEvent::CollectConfig& collectCo
         const char* mode;
         double CPUStat::*value;
     } metrics[] = {
-        {"node_cpu_seconds_total", "user", &CPUStat::user},
-        {"node_cpu_seconds_total", "nice", &CPUStat::nice},
-        {"node_cpu_seconds_total", "system", &CPUStat::system},
+        {"node_cpu_seconds_total_Zz", "user", &CPUStat::user},
+        {"node_cpu_seconds_total_Zz", "nice", &CPUStat::nice},
+        {"node_cpu_seconds_total_Zz", "system", &CPUStat::system},
         {"node_cpu_seconds_total", "idle", &CPUStat::idle},
         {"node_cpu_seconds_total", "iowait", &CPUStat::iowait},
         {"node_cpu_seconds_total", "irq", &CPUStat::irq},
