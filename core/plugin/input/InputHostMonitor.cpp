@@ -31,6 +31,7 @@ const uint32_t kDefaultInterval = 15; // seconds
 bool InputHostMonitor::Init(const Json::Value& config, Json::Value& optionalGoPipeline) {
     std::string errorMsg;
     mInterval = kDefaultInterval;
+
     if (!GetOptionalUIntParam(config, "Interval", mInterval, errorMsg)) {
         PARAM_WARNING_DEFAULT(mContext->GetLogger(),
                               mContext->GetAlarm(),
@@ -56,45 +57,49 @@ bool InputHostMonitor::Init(const Json::Value& config, Json::Value& optionalGoPi
     }
 
     // TODO: add more collectors
+    // use mInterval as init value
     // cpu
     bool enableCPU = true;
-    if (!GetOptionalBoolParam(config, "EnableCPU", enableCPU, errorMsg)) {
-        PARAM_ERROR_RETURN(mContext->GetLogger(),
-                           mContext->GetAlarm(),
-                           errorMsg,
-                           sName,
-                           mContext->GetConfigName(),
-                           mContext->GetProjectName(),
-                           mContext->GetLogstoreName(),
-                           mContext->GetRegion());
-    }
-    if (enableCPU) {
-        mCollectors.push_back(CPUCollector::sName);
+    uint32_t cpuInterval = mInterval;
+    if (config.isMember("CPU")) {
+        const Json::Value cpuConfig = config.get("CPU", Json::Value(Json::objectValue));
+        if (!GetOptionalBoolParam(cpuConfig, "Enable", enableCPU, errorMsg)) {
+            PARAM_ERROR_RETURN(mContext->GetLogger(),
+                               mContext->GetAlarm(),
+                               errorMsg,
+                               sName,
+                               mContext->GetConfigName(),
+                               mContext->GetProjectName(),
+                               mContext->GetLogstoreName(),
+                               mContext->GetRegion());
+        }
+        if (!GetOptionalUIntParam(cpuConfig, "Interval", cpuInterval, errorMsg)) {
+            PARAM_WARNING_DEFAULT(mContext->GetLogger(),
+                                  mContext->GetAlarm(),
+                                  errorMsg,
+                                  mInterval,
+                                  sName,
+                                  mContext->GetConfigName(),
+                                  mContext->GetProjectName(),
+                                  mContext->GetLogstoreName(),
+                                  mContext->GetRegion());
+        }
+    } else {
+        enableCPU = false;
     }
 
-    // system load 
-    bool enableSystem = true;
-    if (!GetOptionalBoolParam(config, "EnableSystem", enableSystem, errorMsg)) {
-        PARAM_ERROR_RETURN(mContext->GetLogger(),
-                           mContext->GetAlarm(),
-                           errorMsg,
-                           sName,
-                           mContext->GetConfigName(),
-                           mContext->GetProjectName(),
-                           mContext->GetLogstoreName(),
-                           mContext->GetRegion());
+    if (enableCPU) {
+        mCollectors.push_back(CPUCollector::sName);
+        mIntervals.push_back(cpuInterval);
     }
-    if (enableSystem) {
-        mCollectors.push_back(SystemCollector::sName);
-    }
-    
+
     return true;
 }
 
 bool InputHostMonitor::Start() {
     HostMonitorInputRunner::GetInstance()->Init();
     HostMonitorInputRunner::GetInstance()->UpdateCollector(
-        mCollectors, {mInterval,mInterval}, mContext->GetProcessQueueKey(), mIndex);
+        mCollectors, mIntervals, mContext->GetProcessQueueKey(), mIndex);
     return true;
 }
 

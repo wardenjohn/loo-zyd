@@ -67,13 +67,18 @@ void InputHostMonitorUnittest::OnSuccessfulInit() {
     // valid optional param
     configStr = R"(
         {
-            "Type": "input_host_monitor"
+            "Type": "input_host_monitor",
+            "CPU": {
+                "Enable": true,
+                "Interval": 5
+            }
         }
     )";
     APSARA_TEST_TRUE(ParseJsonTable(configStr, configJson, errorMsg));
     input.reset(new InputHostMonitor());
     input->SetContext(ctx);
     input->SetMetricsRecordRef("test", "1");
+    input->Init(configJson, optionalGoPipeline);
     APSARA_TEST_TRUE(input->Init(configJson, optionalGoPipeline));
     APSARA_TEST_EQUAL(input->sName, "input_host_monitor");
 }
@@ -87,14 +92,17 @@ void InputHostMonitorUnittest::OnFailedInit() {
     configStr = R"(
         {
             "Type": "input_host_monitor",
-            "CPU": 123456
+            "CPU" : {
+                "Enable": 5,
+                "Interval": 5
+            }
         }
     )";
     APSARA_TEST_TRUE(ParseJsonTable(configStr, configJson, errorMsg));
     input.reset(new InputHostMonitor());
     input->SetContext(ctx);
     input->SetMetricsRecordRef("test", "1");
-    APSARA_TEST_TRUE(input->Init(configJson, optionalGoPipeline));
+    APSARA_TEST_FALSE(input->Init(configJson, optionalGoPipeline));
     APSARA_TEST_EQUAL_FATAL(input->mInterval, 15);
 }
 
@@ -105,7 +113,11 @@ void InputHostMonitorUnittest::OnSuccessfulStart() {
 
     configStr = R"(
         {
-            "Type": "input_host_monitor"
+            "Type": "input_host_monitor",
+            "CPU": {
+                "Enable": true,
+                "Interval": 5
+            }
         }
     )";
     APSARA_TEST_TRUE(ParseJsonTable(configStr, configJson, errorMsg));
@@ -123,9 +135,14 @@ void InputHostMonitorUnittest::OnSuccessfulStop() {
 
     configStr = R"(
         {
-            "Type": "input_host_monitor"
+            "Type": "input_host_monitor",
+            "CPU": {
+                "Enable": true,
+                "Interval": 5
+            }
         }
     )";
+
     APSARA_TEST_TRUE(ParseJsonTable(configStr, configJson, errorMsg));
     input.reset(new InputHostMonitor());
     input->SetContext(ctx);
