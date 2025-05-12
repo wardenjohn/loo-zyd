@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 iLogtail Authors
+ * Copyright 2025 iLogtail Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,22 @@
 
 #pragma once
 
-#include <string>
 #include <vector>
+
+#include "host_monitor/collector/BaseCollector.h"
 
 namespace logtail {
 
-bool GetHostSystemStat(std::vector<std::string>& lines, std::string& errorMessage);
-bool GetHostMeminfoStat(std::vector<std::string>& lines, std::string& errorMessage);
-} // namespace logtail
+class MemCollector : public BaseCollector {
+public:
+    static const std::string sName;
+
+    bool Collect(const HostMonitorTimerEvent::CollectConfig& collectConfig, PipelineEventGroup* group) override;
+
+    ~MemCollector() override = default;
+
+private:
+    bool GetHostMeminfo(std::vector<std::string>& lines, std::string& errorMessage);
+};
+
+}

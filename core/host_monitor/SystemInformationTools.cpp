@@ -44,4 +44,17 @@ bool GetHostSystemStat(vector<string>& lines, string& errorMessage) {
     return true;
 }
 
+bool GetHostMeminfoStat(std::vector<std::string>& lines, std::string& errorMessage) {
+    errorMessage.clear();
+    if (!CheckExistance(PROCESS_DIR / PROCESS_STAT)) {
+        errorMessage = "file does not exist: " + (PROCESS_DIR / PROCESS_STAT).string();
+        return false;
+    }
+
+    int ret = GetFileLines(PROCESS_DIR / PROCESS_STAT, lines, true, &errorMessage);
+    if (ret != 0 || lines.empty()) {
+        return false;
+    }
+    return true;
+}
 } // namespace logtail
