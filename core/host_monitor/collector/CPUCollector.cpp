@@ -34,6 +34,7 @@ const std::string kMetricLabelCPU = "cpu";
 const std::string kMetricLabelMode = "mode";
 
 bool CPUCollector::Collect(const HostMonitorTimerEvent::CollectConfig& collectConfig, PipelineEventGroup* group) {
+    
     if (group == nullptr) {
         return false;
     }
