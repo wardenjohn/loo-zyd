@@ -21,6 +21,7 @@
 #include "host_monitor/HostMonitorInputRunner.h"
 #include "host_monitor/collector/CPUCollector.h"
 #include "host_monitor/collector/SystemCollector.h"
+#include "host_monitor/collector/MemCollector.h"
 
 namespace logtail {
 
@@ -91,6 +92,53 @@ bool InputHostMonitor::Init(const Json::Value& config, Json::Value& optionalGoPi
     if (enableCPU) {
         mCollectors.push_back(CPUCollector::sName);
         mIntervals.push_back(cpuInterval);
+    }
+
+    //meminfo
+    bool enableMem = true;
+    uint32_t memInterval = mInterval;
+    if(config.isMember("Mem")){
+        const Json::Value memConfig = config.get("Mem", Json::Value(Json::objectValue));
+        if (!GetOptionalBoolParam(memConfig, "Enable", enableMem, errorMsg)) {
+            PARAM_ERROR_RETURN(mContext->GetLogger(),
+                               mContext->GetAlarm(),
+                               errorMsg,
+                               sName,
+                               mContext->GetConfigName(),
+                               mContext->GetProjectName(),
+                               mContext->GetLogstoreName(),
+                               mContext->GetRegion());
+        }
+        if (!GetOptionalUIntParam(memConfig, "Interval", memInterval, errorMsg)) {
+            PARAM_WARNING_DEFAULT(mContext->GetLogger(),
+                                  mContext->GetAlarm(),
+                                  errorMsg,
+                                  mInterval,
+                                  sName,
+                                  mContext->GetConfigName(),
+                                  mContext->GetProjectName(),
+                                  mContext->GetLogstoreName(),
+                                  mContext->GetRegion());
+        }
+
+        if (memInterval < kMinInterval){
+            memInterval = kMinInterval;
+        }
+    } else {
+        enableMem = false;
+    }
+
+    if (enableMem) {
+        mCollectors.push_back(MemCollector::sName);
+        mIntervals.push_back(memInterval);
+    }
+
+    for (auto &def : mCollectors) {
+        std::cout << def << std::endl;
+    }
+
+    for (auto &def : mIntervals) {
+        std::cout << def << std::endl;
     }
 
     return true;
