@@ -24,6 +24,7 @@ namespace logtail {
 // MetricCalculate 用于计算各个collector采集的指标的最大值、最小值和均值
 // TMetric为各个collector保存指标数据的类，TField为各个collector保存指标数据的字段
 // 计算完成后，各collector打上tag，生成对应的metricEvent
+
 template <typename TMetric, typename TField = double>
 class MetricCalculate {
 public:
