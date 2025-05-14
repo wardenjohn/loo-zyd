@@ -20,7 +20,7 @@
 #include "common/ParamExtractor.h"
 #include "host_monitor/HostMonitorInputRunner.h"
 #include "host_monitor/collector/CPUCollector.h"
-#include "host_monitor/collector/SystemCollector.h"
+//#include "host_monitor/collector/SystemCollector.h"
 #include "host_monitor/collector/MemCollector.h"
 
 namespace logtail {
@@ -131,14 +131,6 @@ bool InputHostMonitor::Init(const Json::Value& config, Json::Value& optionalGoPi
     if (enableMem) {
         mCollectors.push_back(MemCollector::sName);
         mIntervals.push_back(memInterval);
-    }
-
-    for (auto &def : mCollectors) {
-        std::cout << def << std::endl;
-    }
-
-    for (auto &def : mIntervals) {
-        std::cout << def << std::endl;
     }
 
     return true;

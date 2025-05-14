@@ -13,8 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#pragma once
-
 #include <vector>
 
 #include "host_monitor/collector/BaseCollector.h"
@@ -28,8 +26,11 @@ struct MemoryInformation {
     uint64_t total = 0;
     uint64_t used = 0;
     uint64_t free = 0;
+    uint64_t available = 0;
     uint64_t actualUsed = 0;
     uint64_t actualFree = 0;
+    uint64_t buffers = 0;
+    uint64_t cached = 0;
     double usedPercent = 0.0;
     double freePercent = 0.0;
 };

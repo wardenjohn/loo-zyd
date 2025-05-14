@@ -39,23 +39,49 @@ const std::string kMetricLabelMode = "mode";
 MemCollector::MemCollector(){
     Init();
 }
+
 int MemCollector::Init(int totalCount) {
     mTotalCount = totalCount;
     mCount = 0;
     return 0;
 }
+
 bool MemCollector::Collect(const HostMonitorTimerEvent::CollectConfig& collectConfig, PipelineEventGroup* group) {
     if (group == nullptr) {
         return false;
     }
-    std::cout << "Inside Mem Collector" << std::endl;
+    std::cout << "MemCollector" << std::endl;
     MemoryInformation memStat;
     SwapInformation swapStat;
     if (!GetHostMeminfoStat(memStat, swapStat)) {
         return false;
     }
-    std::cout << "MemCollector finished" << std::endl;
     
+    const time_t now = time(nullptr);
+    constexpr struct MetricDef {
+        const char* name;
+        const char* mode;
+        double memStat::*value;
+    } metrics[] = {
+        {"node_mem_total", "user", &CPUStat::user},
+    };
+    for (const auto& cpu : cpus) {
+        if (cpu.index == -1) {
+            continue;
+        }
+        for (const auto& def : metrics) {
+            auto* metricEvent = group->AddMetricEvent(true);
+            if (!metricEvent) {
+                continue;
+            }
+            metricEvent->SetName(def.name);
+            metricEvent->SetTimestamp(now, 0);
+            metricEvent->SetValue<UntypedSingleValue>(cpu.*(def.value) / SYSTEM_HERTZ);
+            metricEvent->SetTag(kMetricLabelCPU, std::to_string(cpu.index));
+            metricEvent->SetTagNoCopy(kMetricLabelMode, def.mode);
+        }
+    }
+
     return true;
 }
 
@@ -107,28 +133,22 @@ bool MemCollector::GetMemoryStat(MemoryInformation& information, std::vector<std
     std::unordered_map<std::string, uint64_t &> memoryProc{
             {"MemTotal:",     information.total},
             {"MemFree:",      information.free},
-            {"MemAvailable:", available},
-            {"Buffers:",      buffers},
-            {"Cached:",       cached},
+            {"MemAvailable:", information.available},
+            {"Buffers:",      information.buffers},
+            {"Cached:",       information.cached},
     };
     /* 字符串处理，处理成对应的类型以及值*/
     for (size_t i = 0; i < memoryLines.size() && !memoryProc.empty(); i++) {
         std::vector<std::string> words = split(memoryLines[i], ' ', true);
+        // words-> MemTotal: / 12344 / kB
 
-        std::cout << words[0] << ":" << words[1] << std::endl;
-        // auto entry = memoryProc.find(words[0]);
-        // if (entry != memoryProc.end()) {
-        //     entry->second = GetMemoryValue(words.back()[0], convert<uint64_t>(words[1]));
-        //     memoryProc.erase(entry);
-        // }
+        auto entry = memoryProc.find(words[0]);
+        if (entry != memoryProc.end()) {
+            entry->second = GetMemoryValue(words.back()[0], std::stoi(words[1]));
+            memoryProc.erase(entry);
+        }
     }
     information.used = Diff(information.total, information.free);
-#ifdef ENABLE_COVERAGE
-    std::cout << (PROCESS_DIR / PROCESS_MEMINFO).string() << ": total:" << information.total << ", free:"
-              << information.free << ",available:" << available << std::endl;
-#endif
-
-    using namespace std::placeholders;
     completeMemoryInformation(information, buffers, cached, available);
 
     return true;
