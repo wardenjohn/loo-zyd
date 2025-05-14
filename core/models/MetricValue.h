@@ -42,6 +42,17 @@ struct UntypedSingleValue {
 #endif
 };
 
+struct UntypedSingleUint64Value {
+    uint64_t mValue;
+
+    constexpr size_t DataSize() const { return sizeof(UntypedSingleUint64Value); }
+
+#ifdef APSARA_UNIT_TEST_MAIN
+    Json::Value ToJson() const;
+    void FromJson(const Json::Value& value);
+#endif
+};
+
 enum UntypedValueMetricType { MetricTypeCounter, MetricTypeGauge };
 
 struct UntypedMultiDoubleValue {
@@ -78,6 +89,36 @@ struct UntypedMultiDoubleValues {
 #endif
 };
 
+/*
+struct UntypedMultiUint64Values {
+    std::map<StringView, UntypedMultiUint64Value> mValues;
+    PipelineEvent* mMetricEventPtr;
+
+    UntypedMultiUint64Values(PipelineEvent* ptr) : mMetricEventPtr(ptr) {}
+   UntypedMultiUint64Values(std::map<StringView, UntypedMultiUint64Value> values, PipelineEvent* ptr)
+        : mValues(values), mMetricEventPtr(ptr) {}
+
+    bool GetValue(StringView key, UntypedMultiUint64Value& val) const;
+    bool HasValue(StringView key) const;
+    void SetValue(const std::string& key, UntypedMultiUint64Value val);
+    void SetValue(StringView key, UntypedMultiUint64Value val);
+    void SetValueNoCopy(const StringBuffer& key, UntypedMultiUint64Value val);
+    void SetValueNoCopy(StringView key, UntypedMultiUint64Value val);
+    void DelValue(StringView key);
+
+    std::map<StringView, UntypedMultiUint64Value>::const_iterator ValuesBegin() const;
+    std::map<StringView, UntypedMultiUint64Value>::const_iterator ValuesEnd() const;
+    size_t ValusSize() const;
+
+    size_t DataSize() const;
+    void ResetPipelineEvent(PipelineEvent* ptr) { mMetricEventPtr = ptr; }
+
+#ifdef APSARA_UNIT_TEST_MAIN
+    Json::Value ToJson() const;
+    void FromJson(const Json::Value& value);
+#endif
+};
+*/
 using MetricValue = std::variant<std::monostate, UntypedSingleValue, UntypedMultiDoubleValues>;
 
 size_t DataSize(const MetricValue& value);

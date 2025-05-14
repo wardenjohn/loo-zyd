@@ -22,25 +22,25 @@ namespace logtail {
 
 // memory information in byte
 struct MemoryInformation {
-    uint64_t ram = 0;
-    uint64_t total = 0;
-    uint64_t used = 0;
-    uint64_t free = 0;
-    uint64_t available = 0;
-    uint64_t actualUsed = 0;
-    uint64_t actualFree = 0;
-    uint64_t buffers = 0;
-    uint64_t cached = 0;
+    double ram = 0;
+    double total = 0;
+    double used = 0;
+    double free = 0;
+    double available = 0;
+    double actualUsed = 0;
+    double actualFree = 0;
+    double buffers = 0;
+    double cached = 0;
     double usedPercent = 0.0;
     double freePercent = 0.0;
 };
 
 struct SwapInformation {
-    uint64_t total = 0;
-    uint64_t used = 0;
-    uint64_t free = 0;
-    uint64_t pageIn = 0;
-    uint64_t pageOut = 0;
+    double total = 0;
+    double used = 0;
+    double free = 0;
+    double pageIn = 0;
+    double pageOut = 0;
 };
 
 class MemCollector : public BaseCollector {
@@ -59,12 +59,11 @@ private:
     bool GetHostMeminfoStat(MemoryInformation& memStat, SwapInformation& swapStat);
     bool GetMemoryStat(MemoryInformation& information, std::vector<std::string>& memoryLines);
     uint64_t GetMemoryValue(char unit, uint64_t value);
-    void completeMemoryInformation(MemoryInformation &memInfo,
-                                  uint64_t buffers,
-                                  uint64_t cached,
-                                  uint64_t available);
-    uint64_t parseProcMtrr(const std::vector<std::string> &lines);
-    bool GetMemoryRam(uint64_t &ram);
+    void completeMemoryInformation(MemoryInformation &memInfo);
+    uint64_t parseProcMtrr(std::vector<std::string> &lines);
+    bool GetMemoryRam(MemoryInformation &memInfo);
+    int GetSwapStat(SwapInformation& swap, std::vector<std::string>& memoryLines);
+    int GetSwapPageInfo(SwapInformation& swap);
 
 private:
     int mTotalCount = 0;
