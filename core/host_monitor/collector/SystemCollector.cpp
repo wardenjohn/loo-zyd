@@ -19,7 +19,7 @@
 #include <chrono>
 #include <filesystem>
 #include <string>
-
+#include <chrono>
 #include "boost/algorithm/string.hpp"
 #include "boost/algorithm/string/split.hpp"
 
@@ -35,7 +35,7 @@ const std::string SystemCollector::sName = "system";
 const std::string kMetricLabelLoad = "system";
 const std::string kMetricLabelMode = "mode";
 
-SystemCollector::SystemCollector() {
+SystemCollector::SystemCollector(){
     Init();
 }
 int SystemCollector::Init(int totalCount) {
