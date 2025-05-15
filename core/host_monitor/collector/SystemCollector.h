@@ -19,8 +19,13 @@
 
 #include "host_monitor/collector/BaseCollector.h"
 #include "host_monitor/collector/MetricCalculate.h"
+#include "plugin/input/InputHostMonitor.h"
 
 namespace logtail {
+
+extern const uint32_t kMinInterval;
+extern const uint32_t kDefaultInterval;
+
 
 struct SystemStat {
     double load1;
@@ -29,13 +34,30 @@ struct SystemStat {
     double load1_per_core;
     double load5_per_core;
     double load15_per_core;
+
+    // Define the field descriptors
+    static inline const FieldName<SystemStat> systemMetricFields[] = {
+        FIELD_ENTRY(SystemStat, load1),
+        FIELD_ENTRY(SystemStat, load5),
+        FIELD_ENTRY(SystemStat, load15),
+        FIELD_ENTRY(SystemStat, load1_per_core),
+        FIELD_ENTRY(SystemStat, load5_per_core),
+        FIELD_ENTRY(SystemStat, load15_per_core),
+    };
+
+    // Define the enumerate function for your metric type
+    static void enumerate(const std::function<void(const FieldName<SystemStat, double>&)>& callback) {
+        for (const auto& field : systemMetricFields) {
+            callback(field);
+        }
+    }
 };
 
 class SystemCollector : public BaseCollector {
 public:
     SystemCollector();
 
-    int Init(int totalCount = 3);
+    int Init(int totalCount = kDefaultInterval / kMinInterval);
     ~SystemCollector() override = default;
 
     bool Collect(const HostMonitorTimerEvent::CollectConfig& collectConfig, PipelineEventGroup* group) override;
