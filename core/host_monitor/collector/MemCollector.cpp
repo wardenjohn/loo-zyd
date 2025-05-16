@@ -32,8 +32,8 @@
 
 namespace logtail {
 
-const std::string MemCollector::sName = "mem";
-const std::string kMetricLabelMem = "mem";
+const std::string MemCollector::sName = "Memory";
+const std::string kMetricLabelMem = "valueTag";
 const std::string kMetricLabelMode = "mode";
 
 const FieldName<MemoryInformation> memStatMeta[] = {
@@ -95,14 +95,25 @@ bool MemCollector::Collect(const HostMonitorTimerEvent::CollectConfig& collectCo
         return false;
     }
 
+    std::cout << memStat.total << "/" << memStat.available << std::endl;
+
     mCalculateMeminfo.AddValue(memStat);
     mCalculateSwap.AddValue(swapStat);
+
+    mCount++;
+    if (mCount < mTotalCount) {
+        return true;
+    }
 
     MemoryInformation minMem,maxMem,avgMem,lastMem;
     SwapInformation  minSwap,maxSwap,avgSwap,lastSwap;
 
     mCalculateMeminfo.Stat(maxMem, minMem, avgMem, &lastMem);
     mCalculateSwap.Stat(maxSwap, minSwap, avgSwap, &lastSwap);
+
+    mCount=0;
+    mCalculateMeminfo.Reset();
+    mCalculateSwap.Reset();
     
     const time_t now = time(nullptr);
     struct MetricDef {
@@ -110,37 +121,38 @@ bool MemCollector::Collect(const HostMonitorTimerEvent::CollectConfig& collectCo
         const char* mode;
         double value;
     } metrics[] = {
-        {"ram", "min", minMem.ram},
-        {"ram", "max", maxMem.ram},
-        {"ram", "avg", avgMem.ram},
+        {"ram", "Minimum", minMem.ram},
+        {"ram", "Maximum", maxMem.ram},
+        {"ram", "Average", avgMem.ram},
         {"total", "total", memStat.total},
-        {"used", "min", minMem.used},
-        {"used", "max", maxMem.used},
-        {"used", "avg", avgMem.used},
-        {"free", "min", minMem.free},
-        {"free", "max", maxMem.free},
-        {"free", "avg", avgMem.free},
-        // {"node_mem_actual_used", "actual_used", memStat.actualUsed},
-        // {"node_mem_actual_free", "actual_free", memStat.actualFree},
-        {"used_percent", "min", minMem.usedPercent},
-        {"used_percent", "max", maxMem.usedPercent},
-        {"used_percent", "avg", avgMem.usedPercent},
-        {"free_percent", "min", minMem.freePercent},
-        {"free_percent", "max", maxMem.freePercent},
-        {"free_percent", "avg", avgMem.freePercent},
+        {"memory_usedspace", "Minimum", minMem.used},
+        {"memory_usedspace", "Maximum", maxMem.used},
+        {"memory_usedspace", "Average", avgMem.used},
+        {"memory_freespace", "Minimum", minMem.free},
+        {"memory_freespace", "Maximum", maxMem.free},
+        {"memory_freespace", "Average", avgMem.free},
+        {"memory_actualusedspace", "Minimum", minMem.actualUsed},
+        {"memory_actualusedspace", "Maximum", maxMem.actualUsed},
+        {"memory_actualusedspace", "Average", avgMem.actualUsed},
+        {"memory_usedutilization", "Minimum", minMem.usedPercent},
+        {"memory_usedutilization", "Maximum", maxMem.usedPercent},
+        {"memory_usedutilization", "Average", avgMem.usedPercent},
+        {"memory_freeutilization", "Minimum", minMem.freePercent},
+        {"memory_freeutilization", "Maximum", maxMem.freePercent},
+        {"memory_freeutilization", "Average", avgMem.freePercent},
         {"swap_total", "total", swapStat.total},
-        {"swap_free", "min", minSwap.free},
-        {"swap_free", "max", maxSwap.free},
-        {"swap_free", "avg", avgSwap.free},
-        {"swap_used", "min", minSwap.used},
-        {"swap_used", "max", maxSwap.used},
-        {"swap_used", "avg", avgSwap.used},
-        {"swap_page_in", "min", minSwap.pageIn},
-        {"swap_page_in", "max", maxSwap.pageIn},
-        {"swap_page_in", "avg", avgSwap.pageIn},
-        {"swap_page_out", "min", minSwap.pageOut},
-        {"swap_page_out", "max", maxSwap.pageOut},
-        {"swap_page_out", "avg", avgSwap.pageOut},
+        {"swap_free", "Minimum", minSwap.free},
+        {"swap_free", "Maximum", maxSwap.free},
+        {"swap_free", "Average", avgSwap.free},
+        {"swap_used", "Minimum", minSwap.used},
+        {"swap_used", "Maximum", maxSwap.used},
+        {"swap_used", "Average", avgSwap.used},
+        {"swap_page_in", "Minimum", minSwap.pageIn},
+        {"swap_page_in", "Maximum", maxSwap.pageIn},
+        {"swap_page_in", "Average", avgSwap.pageIn},
+        {"swap_page_out", "Minimum", minSwap.pageOut},
+        {"swap_page_out", "Maximum", maxSwap.pageOut},
+        {"swap_page_out", "Average", avgSwap.pageOut},
     };
 
     for (const auto& def : metrics) {
