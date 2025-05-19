@@ -1,38 +1,35 @@
-#ifndef LOONGCOLLECTOR_FIELD_ENTRY_H
-#define LOONGCOLLECTOR_FIELD_ENTRY_H
+/*
+ * Copyright 2025 iLogtail Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 #include <functional>
 #include <string>
 
-#define FIELD_NAME_INITIALIZER(NAME, CLASS, F) NAME, [](CLASS& p) { return std::ref(p.F); }
-#define FIELD_NAME_ENTRY(NAME, CLASS, F) {FIELD_NAME_INITIALIZER(NAME, CLASS, F)}
-// 适用于字段与Name同名的情况
-#define FIELD_ENTRY(CLASS, F) {#F, [](CLASS& p) { return std::ref(p.F); }}
 
-template <typename TClass, typename TFieldType = double>
+template <typename TClass, typename TField = double>
 class FieldName {
-    std::function<TFieldType&(TClass&)> _fnGet;
-
 public:
-    const std::string name; // 名称
+    std::string_view name;
+    TField TClass::*ptr; // 成员指针，直接访问字段
 
-    FieldName(const char* n, std::function<TFieldType&(TClass&)> fnGet) : _fnGet(fnGet), name(n == nullptr ? "" : n) {}
+    constexpr FieldName(std::string_view n, TField TClass::*p) : name(n), ptr(p) {}
 
-    const TFieldType& value(const TClass& p) const { return _fnGet(const_cast<TClass&>(p)); }
-
-    TFieldType& value(TClass& p) const { return const_cast<TFieldType&>(_fnGet(p)); }
+    // 访问对象中的字段值
+    TField& value(TClass& obj) const { return obj.*ptr; }
+    const TField& value(const TClass& obj) const { return obj.*ptr; }
 };
 
-#define METRIC_FIELD_NAME_INITIALIZER(NAME, CLASS, F, BOOL) FIELD_NAME_INITIALIZER(NAME, CLASS, F), BOOL
-#define METRIC_FIELD_NAME_ENTRY(NAME, CLASS, F, BOOL) {METRIC_FIELD_NAME_INITIALIZER(NAME, CLASS, F, BOOL)}
-#define METRIC_FIELD_ENTRY(CLASS, F, BOOL) {METRIC_FIELD_NAME_INITIALIZER(#F, CLASS, F, BOOL)}
-
-template <typename TClass, typename TFieldType>
-struct MetricFieldName : FieldName<TClass, TFieldType> {
-    const bool isMetric;
-
-public:
-    MetricFieldName(const char* name, std::function<TFieldType&(TClass&)> fnGet, bool isMetric)
-        : FieldName<TClass, TFieldType>(name, fnGet), isMetric(isMetric) {}
-};
-
-#endif // LOONGCOLLECTOR_FIELD_ENTRY_H
+// 字段定义宏
+#define FIELD_ENTRY(CLASS, FIELD) FieldName<CLASS>(#FIELD, &CLASS::FIELD)
