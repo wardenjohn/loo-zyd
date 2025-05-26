@@ -22,6 +22,8 @@ namespace logtail {
 
 extern std::filesystem::path PROCESS_DIR;
 const extern std::filesystem::path PROCESS_STAT;
+extern std::filesystem::path PROCESS_MTRR;
+extern std::filesystem::path PROCESS_MEMINFO;
 const extern int64_t SYSTEM_HERTZ;
 
 } // namespace logtail

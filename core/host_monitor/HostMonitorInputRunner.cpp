@@ -44,6 +44,7 @@ HostMonitorInputRunner::HostMonitorInputRunner() {
     RegisterCollector<ProcessEntityCollector>();
     RegisterCollector<CPUCollector>();
     RegisterCollector<SystemCollector>();
+    RegisterCollector<ProcessEntityCollector>();
 
     size_t threadPoolSize = 1;
     // threadPoolSize should be greater than 0

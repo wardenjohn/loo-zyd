@@ -15,6 +15,7 @@
  */
 
 #include "host_monitor/collector/ProcessEntityCollector.h"
+#include "host_monitor/collector/MemCollector.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -48,9 +49,12 @@ namespace logtail {
 const size_t ProcessTopN = 20;
 
 const std::string ProcessEntityCollector::sName = "process_entity";
+const std::string kMetricLabelProcess = "process_entity";
+const std::string kMetricLabelMode = "mode";
 
 ProcessEntityCollector::ProcessEntityCollector()
     : mProcParser(""), mProcessSilentCount(INT32_FLAG(process_collect_silent_count)) {
+
 }
 
 system_clock::time_point ProcessEntityCollector::TicksToUnixTime(int64_t startTicks) {
@@ -58,17 +62,52 @@ system_clock::time_point ProcessEntityCollector::TicksToUnixTime(int64_t startTi
                                     + milliseconds{GetHostSystemBootTime() * 1000}};
 }
 
+
 bool ProcessEntityCollector::Collect(const HostMonitorTimerEvent::CollectConfig& collectConfig,
                                      PipelineEventGroup* group) {
     if (group == nullptr) {
         return false;
     }
+    std::cout << "ProcessEntityCollector::Collect" << std::endl;
     std::vector<ExtendedProcessStatPtr> processes;
     GetSortedProcess(processes, ProcessTopN);
+
+    // 设定进程信息绑定
+    struct MetricDef {
+        const char* name;
+        const char* mode;
+        double value;
+    } metrics[] = {
+        {"process.number", "Average", 1.0},
+        {"process.number", "Maximum", 1.0},
+        {"process.number", "Minimum", 1.0},
+        {"vm.ProcessCount", "Average", 1.0},
+        {"vm.ProcessCount", "Maximum", 1.0},
+        {"vm.ProcessCount", "Minimum", 1.0},
+        {"process.openfile", "Average", 1.0},
+        {"process.openfile", "Maximum", 1.0},
+        {"process.openfile", "Minimum", 1.0},
+        {"process.cpu", "Average", 1.0},
+        {"process.cpu", "Maximum", 1.0},
+        {"process.cpu", "Minimum", 1.0},
+        {"process.memory", "Average", 1.0},
+        {"process.memory", "Maximum", 1.0},
+        {"process.memory", "Minimum", 1.0},
+        {"process.expend", "Average", 1.0},
+        {"process.expend", "Maximum", 1.0},
+        {"process.expend", "Minimum", 1.0},
+    };
+
     for (const auto& extentedProcess : processes) {
         auto process = extentedProcess->stat;
         auto* event = group->AddLogEvent();
+        auto* metricEvent = group->AddMetricEvent(true);
+        if (!metricEvent) {
+                continue;
+        }
         time_t logtime = time(nullptr);
+        //const time_t now = time(nullptr);
+        
         event->SetTimestamp(logtime);
 
         auto startTime = system_clock::time_point{static_cast<milliseconds>(process.startTicks)
@@ -118,6 +157,22 @@ bool ProcessEntityCollector::Collect(const HostMonitorTimerEvent::CollectConfig&
         linkEvent->SetContent(DEFAULT_CONTENT_KEY_FIRST_OBSERVED_TIME, processCreateTime);
         linkEvent->SetContent(DEFAULT_CONTENT_KEY_LAST_OBSERVED_TIME, std::to_string(logtime));
         linkEvent->SetContent(DEFAULT_CONTENT_KEY_KEEP_ALIVE_SECONDS, std::to_string(keepAliveSeconds));
+
+
+        // 设置数据并上传
+        // for (const auto& def : metrics) {
+        //     // 设置数据上传接口
+        //     metricEvent->SetName(def.name);
+        //     std::cout << def.name << std::endl;
+        //     auto* metricEvent = group->AddMetricEvent(true);
+        //     if (!metricEvent) {
+        //         continue;
+        //     }
+        //     metricEvent->SetName(def.name);
+        //     metricEvent->SetTimestamp(now, 0);
+        //     metricEvent->SetValue<UntypedSingleValue>(1444.0);
+        //     metricEvent->SetTag(kMetricLabelProcess, std::to_string(123));
+        // }
     }
     return true;
 }
@@ -240,6 +295,7 @@ bool ProcessEntityCollector::WalkAllProcess(const std::filesystem::path& root,
     }
     mValidState = true;
 
+    // 访问所有的数字文件夹: pid
     for (const auto& dirEntry :
          std::filesystem::directory_iterator{root, std::filesystem::directory_options::skip_permission_denied}) {
         std::string filename = dirEntry.path().filename().string();

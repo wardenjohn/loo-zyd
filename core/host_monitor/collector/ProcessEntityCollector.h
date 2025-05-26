@@ -36,12 +36,24 @@ using namespace std::chrono;
 
 namespace logtail {
 
-
 struct ProcessCpuInfo {
     uint64_t user = 0;
     uint64_t sys = 0;
     uint64_t total = 0;
     double percent = 0.0;
+
+    // static inline FieldName<ProcessCpuInfo> processCpuInfoMetas[] = {
+    //     FIELD_ENTRY(ProcessCpuInfo, user),
+    //     FIELD_ENTRY(ProcessCpuInfo, sys),
+    //     FIELD_ENTRY(ProcessCpuInfo, total),
+    //     FIELD_ENTRY(ProcessCpuInfo, percent),
+    // };
+
+    // static void enumerate(std::function<void(FieldName<ProcessCpuInfo>&)>& callback) {
+    //     for (auto& field : processCpuInfoMetas) {
+    //         callback(field);
+    //     }
+    // }
 };
 
 struct ExtendedProcessStat {
@@ -63,6 +75,8 @@ public:
     static const std::string sName;
     const std::string& Name() const override { return sName; }
 
+    uint64_t totalMemory;
+
 private:
     system_clock::time_point TicksToUnixTime(int64_t startTicks);
     void GetSortedProcess(std::vector<ExtendedProcessStatPtr>& processStats, size_t topN);
@@ -70,6 +84,7 @@ private:
     ExtendedProcessStatPtr ReadNewProcessStat(pid_t pid);
     ExtendedProcessStatPtr ParseProcessStat(pid_t pid, std::string& line);
     bool WalkAllProcess(const std::filesystem::path& root, const std::function<void(const std::string&)>& callback);
+    int UpdateTotalMemory(uint64_t &totalMemory, std::vector<std::string>& loadLines);
 
     std::string GetProcessEntityID(StringView pid, StringView createTime, StringView hostEntityID);
     void FetchDomainInfo(std::string& domain,
