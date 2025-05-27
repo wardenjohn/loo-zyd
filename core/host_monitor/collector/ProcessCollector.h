@@ -14,9 +14,13 @@
  * limitations under the License.
  */
 #include <vector>
+#include <boost/filesystem.hpp>
+#include <filesystem>
 
 #include "host_monitor/collector/BaseCollector.h"
 #include "host_monitor/collector/MetricCalculate.h"
+
+using namespace std::chrono;
 
 namespace logtail {
 
@@ -33,8 +37,20 @@ public:
     const std::string& Name() const override { return sName; }
 
 private:
+    bool GetPids(std::vector<pid_t>& pids);
+
+    bool WalkAllDigitDirs(const std::filesystem::path& root, const std::function<void(const std::string&)>& callback);
+
+    void RemovePid(std::vector<pid_t> &pids, pid_t pid, pid_t ppid);
+
+    void GetSelfPid(pid_t &pid, pid_t &ppid);
+
+private:
     int mTotalCount = 0;
     int mCount = 0;
+    std::vector<pid_t> pids;
+    int mSelfPid = 0;
+    int mParentPid = 0;
 };
 
 } // namespace logtail
