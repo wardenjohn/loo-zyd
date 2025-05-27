@@ -33,6 +33,7 @@
 #include "host_monitor/collector/CPUCollector.h"
 #include "host_monitor/collector/ProcessEntityCollector.h"
 #include "host_monitor/collector/SystemCollector.h"
+#include "host_monitor/collector/ProcessCollector.h"
 #include "logger/Logger.h"
 #include "runner/ProcessorRunner.h"
 
@@ -44,6 +45,7 @@ HostMonitorInputRunner::HostMonitorInputRunner() {
     RegisterCollector<ProcessEntityCollector>();
     RegisterCollector<CPUCollector>();
     RegisterCollector<SystemCollector>();
+    RegisterCollector<ProcessCollector>();
 
     size_t threadPoolSize = 1;
     // threadPoolSize should be greater than 0

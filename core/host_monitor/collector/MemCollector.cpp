@@ -36,43 +36,6 @@ const std::string MemCollector::sName = "Memory";
 const std::string kMetricLabelMem = "valueTag";
 const std::string kMetricLabelMode = "mode";
 
-const FieldName<MemoryInformation> memStatMeta[] = {
-    FIELD_ENTRY(MemoryInformation, ram),
-    FIELD_ENTRY(MemoryInformation, total),
-    FIELD_ENTRY(MemoryInformation, used),
-    FIELD_ENTRY(MemoryInformation, free),
-    FIELD_ENTRY(MemoryInformation, available),
-    FIELD_ENTRY(MemoryInformation, actualUsed),
-    FIELD_ENTRY(MemoryInformation, actualFree),
-    FIELD_ENTRY(MemoryInformation, buffers),
-    FIELD_ENTRY(MemoryInformation, cached),
-    FIELD_ENTRY(MemoryInformation, usedPercent),
-    FIELD_ENTRY(MemoryInformation, freePercent),
-};
-
-const FieldName<SwapInformation> swapStatMeta[] = {
-    FIELD_ENTRY(SwapInformation, total),
-    FIELD_ENTRY(SwapInformation, used),
-    FIELD_ENTRY(SwapInformation, used),
-    FIELD_ENTRY(SwapInformation, pageIn),
-    FIELD_ENTRY(SwapInformation, pageOut),
-};
-
-const size_t memStatMetaSize = sizeof(memStatMeta) / sizeof(memStatMeta[0]);
-const FieldName<MemoryInformation>* const memStatMetaEnd = memStatMeta + memStatMetaSize;
-void enumerate(const std::function<void(const FieldName<MemoryInformation>&)>& callback) {
-    for (auto it = memStatMeta; it < memStatMetaEnd; ++it) {
-        callback(*it);
-    }
-}
-
-const size_t swapStatMetaSize = sizeof(swapStatMeta) / sizeof(swapStatMeta[0]);
-const FieldName<SwapInformation>* const swapStatMetaEnd = swapStatMeta + swapStatMetaSize;
-void enumerate(const std::function<void(const FieldName<SwapInformation>&)>& callback) {
-    for (auto it = swapStatMeta; it < swapStatMetaEnd; ++it) {
-        callback(*it);
-    }
-}
 
 MemCollector::MemCollector(){
     Init();
