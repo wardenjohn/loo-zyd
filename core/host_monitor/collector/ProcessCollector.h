@@ -19,6 +19,7 @@
 
 #include "host_monitor/collector/BaseCollector.h"
 #include "host_monitor/collector/MetricCalculate.h"
+#include "common/ProcParser.h"
 
 using namespace std::chrono;
 
@@ -78,6 +79,13 @@ enum class EnumProcessStat : int {
 
     _count, // 只是用于计数，非实际字段
 };
+
+static_assert((int) EnumProcessStat::comm == 1, "EnumProcessStat invalid");
+static_assert((int) EnumProcessStat::processor == 38, "EnumProcessStat invalid");
+
+constexpr int operator-(EnumProcessStat a, EnumProcessStat b) {
+    return (int) a - (int) b;
+}
 
 namespace logtail {
 
@@ -149,6 +157,67 @@ struct ProcessTime {
     }
 };
 
+struct ProcessCpuInformationCache {
+    ProcessCpuInformation processCpu;
+    std::chrono::steady_clock::time_point expireTime;
+};
+
+struct CpuInformationCache {
+    std::chrono::microseconds entryExpirePeriod{0};
+    std::chrono::microseconds cleanPeriod{0};
+    std::chrono::steady_clock::time_point nextCleanTime;
+
+    struct key {
+        pid_t pid = 0;
+        bool includeCTime = false;
+
+        key() = default;
+
+        key(pid_t n, bool b) : pid(n), includeCTime(b) {}
+
+        bool operator==(const key &r) const {
+            return pid == r.pid && includeCTime == r.includeCTime;
+        }
+
+        struct key_hash {
+            size_t operator()(const key &r) const {
+                return std::hash<pid_t>{}(r.pid) ^ std::hash<bool>{}(r.includeCTime);
+            }
+        };
+    };
+
+    std::unordered_map<key, ProcessCpuInformationCache, typename key::key_hash> entries;
+};
+
+struct ProcessInfo {
+        pid_t pid;
+        std::string name;
+        std::string path;
+        std::string cwd;
+        std::string root;
+        std::string args;
+        std::string user;
+};
+
+struct ProcessMemoryInformation {
+    uint64_t size = 0;
+    uint64_t resident = 0;
+    uint64_t share = 0;
+    uint64_t minorFaults = 0;
+    uint64_t majorFaults = 0;
+    uint64_t pageFaults = 0;
+};
+
+struct ProcessAllStat {
+        ProcessStat processState;
+        ProcessInfo processInfo;
+        ProcessCpuInformation processCpu;
+        ProcessMemoryInformation processMemory;
+        double memPercent = 0.0;
+        uint64_t fdNum = 0;
+        bool fdNumExact = true;
+};
+
 class ProcessCollector : public BaseCollector {
 public:
     ProcessCollector();
@@ -174,13 +243,27 @@ private:
 
     void CopyAndSortByCpu(const std::vector<pid_t> &pids, std::vector<pid_t> &sortPids);
 
-    int GetProcessCpuInformation(pid_t pid, ProcessCpuInformation &information,bool includeCTime);
-
     int GetProcessTime(pid_t pid, ProcessTime &output, bool includeCTime);
 
     int ReadProcessStat(pid_t pid, LinuxProcessInfo &processInfo);
 
     int GetPidsCpu(const std::vector<pid_t> &pids, std::map<pid_t, uint64_t> &pidMap);
+
+    int GetTopNProcessStat(std::vector <pid_t> &sortPids, int topN, std::vector<ProcessAllStat> &processAllStats);
+
+    int GetProcessAllStat(pid_t pid, ProcessAllStat &processStat);
+
+    int GetProcessState(pid_t pid, ProcessStat &processState);
+
+    int GetProcessMemory(pid_t pid, ProcessMemoryInformation &processMemory);
+
+protected:
+
+    int GetProcessCpuInformation(pid_t pid, ProcessCpuInformation &information,bool includeCTime);
+
+    ProcessCpuInformation &GetProcessCpuInCache(pid_t pid, bool includeCTime);
+
+    void CleanProcessCpuCacheIfNecessary() const;
 
 private:
     int mTotalCount = 0;
@@ -189,10 +272,10 @@ private:
     std::vector<pid_t> mSortPids;
     int mSelfPid = 0;
     int mParentPid = 0;
+    int mTopN=5;
     std::chrono::steady_clock::time_point mProcessSortCollectTime;
     const int mProcessSilentCount=1000;
     std::shared_ptr<std::map<pid_t, uint64_t>> mLastPidCpuMap;
-    ProcessCpuInformation prevInfo;
 
     std::function<int(const std::vector<pid_t> &, std::map<pid_t, uint64_t> &)> fnGetPidsMetric;
     std::function<uint64_t(uint64_t, uint64_t)> fnTopValue;

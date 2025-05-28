@@ -20,6 +20,7 @@
 #include <string>
 #include <algorithm>
 #include <thread>
+#include <boost/program_options.hpp>
 
 #include "boost/algorithm/string.hpp"
 #include "boost/algorithm/string/split.hpp"
@@ -31,7 +32,7 @@
 #include "logger/Logger.h"
 #include "common/TimeUtil.h"
 
-int64_t ToMillis(const std::chrono::system_clock::time_point &t) {
+int64_t ToMillis(std::chrono::system_clock::time_point &t) {
     return std::chrono::duration_cast<std::chrono::milliseconds>(t.time_since_epoch()).count();
 }
 
@@ -57,6 +58,39 @@ public:
         return 0 <= index && index < static_cast<int>(data.size()) ? data[index] : empty;
     }
 };
+
+extern const int ClkTck = sysconf(_SC_CLK_TCK); // 一般为100
+
+static uint64_t Tick2Millisecond(uint64_t tick) {
+    constexpr const uint64_t MILLISECOND = 1000;
+    return tick * MILLISECOND / ClkTck;
+}
+
+static uint64_t Tick2Millisecond(const std::string &tick) {
+    return Tick2Millisecond(static_cast<uint64_t>(std::stoll(tick)));
+}
+
+// T: uint64_t、std::chrono::milliseconds
+template<typename T>
+T Tick2(const std::string &tick) {
+    return T{Tick2Millisecond(tick)};
+}
+
+template<typename T, typename TIndex>
+class MillisVector {
+    const TVector<TIndex> &v;
+public:
+    static constexpr const T zero{0};
+
+    explicit MillisVector(const TVector<TIndex> &r) : v(r) {
+    }
+
+    T operator[](TIndex key) const {
+        return Tick2<T>(v[key]);
+    }
+};
+
+logtail::CpuInformationCache processCpuCache{}; // 全局CPU信息cache
 
 namespace logtail {
 
@@ -86,6 +120,8 @@ bool ProcessCollector::Collect(const HostMonitorTimerEvent::CollectConfig& colle
     }
 
     const time_t now = time(nullptr);
+
+    std::cout << "inside ProcessCollector::Collect" << std::endl;
 
     // 排除自身干扰
     GetSelfPid(mSelfPid, mParentPid);
@@ -194,6 +230,94 @@ void ProcessCollector::collectTopN(const std::vector<pid_t> &pids) {
     std::vector<pid_t> sortPids;
     CopyAndSortByCpu(pids, sortPids);
 
+    // 获取topN进程的信息
+    std::vector<ProcessAllStat> topN;
+    topN.reserve(mTopN);
+
+    GetTopNProcessStat(sortPids, mTopN, topN);
+
+}
+
+// 获取TopN的进程信息
+int ProcessCollector::GetTopNProcessStat(std::vector <pid_t> &sortPids, int topN, std::vector<ProcessAllStat> &processStats) {
+    processStats.clear();
+    processStats.reserve(topN);
+
+    for (pid_t pid: sortPids) {
+        ProcessAllStat processAllStat;
+        if (GetProcessAllStat(pid, processAllStat) == 0) {
+            processStats.push_back(processAllStat);
+            break;
+        }
+    }
+    return 0;
+}
+
+// 获取某个pid的信息
+int ProcessCollector::GetProcessAllStat(pid_t pid, ProcessAllStat &processStat) {
+    // 获取这个pid的cpu信息
+    int ret = GetProcessCpuInformation(pid, processStat.processCpu, false);
+    if (ret != 0) {
+        return ret;
+    }
+
+    ret = GetProcessState(pid, processStat.processState);
+    if (ret != 0) {
+        return ret;
+    }
+
+    ret = GetProcessMemory(pid, processStat.processMemory);
+    if (ret != 0) {
+        return ret;
+    }
+}
+
+// 获取pid的内存信息
+int ProcessCollector::GetProcessMemory(pid_t pid, ProcessMemoryInformation &processMemory) {
+    std::string errorMessage;
+    LinuxProcessInfo linuxProcessInfo;
+    int status = ReadProcessStat(pid, linuxProcessInfo);
+    if (status != 0) {
+        return status;
+    }
+    processMemory.minorFaults = linuxProcessInfo.minorFaults;
+    processMemory.majorFaults = linuxProcessInfo.majorFaults;
+    processMemory.pageFaults = linuxProcessInfo.minorFaults + linuxProcessInfo.majorFaults;
+
+    std::vector<std::string> lines = {};
+    const auto procStatm = PROCESS_DIR / std::to_string(pid) / PROCESS_STATM;
+
+    std::vector<std::string> loadLines;
+
+    if (!GetHostSystemStatWithPath(loadLines, errorMessage, procStatm)) {
+        return EXECUTE_FAIL;
+    }
+    std::vector<std::string> processMemoryMetric = split((loadLines.empty() ? "" : lines.front()), ' ', false);
+    if (processMemoryMetric.size() < 3) {
+        return EXECUTE_FAIL;
+    }
+
+    int index = 0;
+    processMemory.size = static_cast<uint64_t>(StringTo(processMemoryMetric[index++], processMemory.size));
+}
+
+//获取pid的状态信息
+int ProcessCollector::GetProcessState(pid_t pid, ProcessStat &processState) {
+    LinuxProcessInfo linuxProcessInfo;
+    int status = ReadProcessStat(pid, linuxProcessInfo);
+    if (status != 0) {
+        return status;
+    }
+
+    processState.state = linuxProcessInfo.state;
+    processState.tty = linuxProcessInfo.tty;
+    processState.parentPid = linuxProcessInfo.parentPid;
+    processState.priority = linuxProcessInfo.priority;
+    processState.nice = linuxProcessInfo.nice;
+    processState.processor = linuxProcessInfo.processor;
+    processState.numThreads = linuxProcessInfo.numThreads;
+
+    return EXECUTE_SUCCESS;
 }
 
 // 获取每个Pid的CPU信息
@@ -213,6 +337,38 @@ int ProcessCollector::GetPidsCpu(const std::vector<pid_t> &pids, std::map<pid_t,
     return 0;
 }
 
+void ProcessCollector::CleanProcessCpuCacheIfNecessary() const {
+    auto &cache = processCpuCache;
+    if (cache.cleanPeriod.count() > 0) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= cache.nextCleanTime) {
+            cache.nextCleanTime = now + cache.cleanPeriod;
+            for (auto entry = cache.entries.begin(); entry != cache.entries.end();) {
+                if (entry->second.expireTime < now) {
+                    //  no one access this entry for too long - need clean
+                    cache.entries.erase(entry++);
+                } else {
+                    ++entry;
+                }
+            }
+        }
+    }
+}
+
+ProcessCpuInformation &ProcessCollector::GetProcessCpuInCache(pid_t pid, bool includeCTime) {
+    CleanProcessCpuCacheIfNecessary();
+
+    logtail::CpuInformationCache::key key{pid, includeCTime};
+    auto &cache = processCpuCache;
+    auto &entry = cache.entries[key]; // 没有则创建
+    entry.expireTime = std::chrono::steady_clock::now() + cache.entryExpirePeriod;
+    return entry.processCpu;
+}
+
+static inline bool IsZero(const std::chrono::steady_clock::time_point &t) {
+    return t.time_since_epoch().count() == 0;
+}
+
 int ProcessCollector::GetProcessCpuInformation(pid_t pid, ProcessCpuInformation &information,bool includeCTime) {
     const auto now = std::chrono::steady_clock::now();
 
@@ -225,6 +381,8 @@ int ProcessCollector::GetProcessCpuInformation(pid_t pid, ProcessCpuInformation 
     if (res != EXECUTE_SUCCESS) {
         return res;
     }
+
+    int64_t timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(now - prev.lastTime).count(); 
 
     using namespace std::chrono;
     information.startTime = ToMillis(processTime.startTime);
@@ -253,9 +411,8 @@ int ProcessCollector::GetProcessTime(pid_t pid, ProcessTime &output, bool includ
 
     output.startTime = processInfo.startTime;
 
-    output.curtime = (includeCTime ? processInfo.cutime : 0_ms);
-    output.cstime = (includeCTime ? processInfo.cstime : 0_ms);
-
+    output.cutime = (includeCTime ? processInfo.cutime : std::chrono::milliseconds{0});
+    output.cstime = (includeCTime ? processInfo.cstime : std::chrono::milliseconds{0});
     output.user = processInfo.utime + output.cutime;
     output.sys = processInfo.stime + output.cstime;
 
@@ -264,12 +421,13 @@ int ProcessCollector::GetProcessTime(pid_t pid, ProcessTime &output, bool includ
     return EXECUTE_SUCCESS;
 }
 
-// 数据样例: /proc/1/stat
+// 数据样例: /proc/1/stat, 解析/proc/pid/stat
 // 1 (cat) R 0 1 1 34816 1 4194560 1110 0 0 0 1 1 0 0 20 0 1 0 18938584 4505600 171 18446744073709551615 4194304 4238788 140727020025920 0 0 0 0 0 0 0 0 0 17 3 0 0 0 0 0 6336016 6337300 21442560 140727020027760 140727020027777 140727020027777 140727020027887 0
 int ProcessCollector::ReadProcessStat(pid_t pid, LinuxProcessInfo &processInfo) {
     processInfo.pid = pid;
 
-    std::string loadLines;
+    std::vector<std::string> loadLines;
+    std::string first_line;
     std::string errorMessage;
     std::filesystem::path statPath = PROCESS_DIR / std::to_string(pid) / PROCESS_STAT;
 
@@ -281,25 +439,22 @@ int ProcessCollector::ReadProcessStat(pid_t pid, LinuxProcessInfo &processInfo) 
         return EXECUTE_FAIL;
     }
 
-    auto invalidStatError = [&processStat](const char *detail) {
-        return (sout{} << "<" << processStat.string() << "> not a valid process stat file: " << detail).str();
-    };
-
-    auto nameStartPos = line.find_first_of('(');
-    auto nameEndPos = line.find_last_of(')');
+    first_line = loadLines.front();
+    auto nameStartPos = first_line.find_first_of('(');
+    auto nameEndPos = first_line.find_last_of(')');
 
     if (nameStartPos == std::string::npos || nameEndPos == std::string::npos) {
         return EXECUTE_FAIL;
     }
 
     nameStartPos++; // 跳过左括号
-    processInfo.name = line.substr(nameStartPos, nameEndPos - nameStartPos);
-    line = line.substr(nameEndPos + 2); // 跳过右括号及空格
+    processInfo.name = first_line.substr(nameStartPos, nameEndPos - nameStartPos);
+    first_line = first_line.substr(nameEndPos + 2); // 跳过右括号及空格
 
-    std::vector<std::string> words = split(line, ' ', false);
+    std::vector<std::string> words = split(first_line, ' ', false);
 
-    constexpr const EnumProcessStat offset = EnumProcessStat::state;  // 跳过pid, comm
-    constexpr const int minCount = EnumProcessStat::processor - offset + 1;  // 37
+    const EnumProcessStat offset = EnumProcessStat::state;  // 跳过pid, comm
+    const int minCount = EnumProcessStat::processor - offset + 1;  // 37
 
     if (words.size() < minCount) {
         return EXECUTE_FAIL;
@@ -308,10 +463,13 @@ int ProcessCollector::ReadProcessStat(pid_t pid, LinuxProcessInfo &processInfo) 
     TVector<EnumProcessStat> v{words, offset};
 
     processInfo.state = v[EnumProcessStat::state].front();
-    processInfo.parentPid = convert<pid_t>(v[EnumProcessStat::ppid]);
-    processInfo.tty = convert<int>(v[EnumProcessStat::tty_nr]);
-    processInfo.minorFaults = convert<uint64_t>(v[EnumProcessStat::minflt]);
-    processInfo.majorFaults = convert<uint64_t>(v[EnumProcessStat::majflt]);
+    processInfo.parentPid = static_cast<pid_t>(atoi(v[EnumProcessStat::ppid].c_str()));
+    processInfo.priority = static_cast<int>(atoi(v[EnumProcessStat::priority].c_str()));
+    processInfo.nice = static_cast<int>(atoi(v[EnumProcessStat::nice].c_str()));
+    processInfo.numThreads = static_cast<int>(atoi(v[EnumProcessStat::num_threads].c_str()));
+    processInfo.tty = static_cast<int>(atoi(v[EnumProcessStat::tty_nr].c_str()));
+    processInfo.minorFaults = static_cast<uint64_t>(atoi(v[EnumProcessStat::minflt].c_str()));
+    processInfo.majorFaults = static_cast<uint64_t>(atoi(v[EnumProcessStat::majflt].c_str()));
 
     MillisVector<milliseconds, EnumProcessStat> mv{v};
     processInfo.utime = mv[EnumProcessStat::utime];
@@ -319,17 +477,20 @@ int ProcessCollector::ReadProcessStat(pid_t pid, LinuxProcessInfo &processInfo) 
     processInfo.cutime = mv[EnumProcessStat::cutime];
     processInfo.cstime = mv[EnumProcessStat::cstime];
 
-    processInfo.priority = convert<int>(v[EnumProcessStat::priority]);
-    processInfo.nice = convert<int>(v[EnumProcessStat::nice]);
-    processInfo.numThreads = convert<int>(v[EnumProcessStat::num_threads]);
-
-    processInfo.startTime = std::chrono::system_clock::time_point{
-            mv[EnumProcessStat::starttime]}; // TODO : Double check
-    processInfo.vSize = convert<uint64_t>(v[EnumProcessStat::vsize]);
-    processInfo.rss = convert<uint64_t>(v[EnumProcessStat::rss]); // pagesize??
-    processInfo.processor = convert<int>(v[EnumProcessStat::processor]);
+    processInfo.startTime = std::chrono::system_clock::time_point{mv[EnumProcessStat::starttime]}; // for testing
+    processInfo.vSize = static_cast<uint64_t>(atoi(v[EnumProcessStat::vsize].c_str()));
+    processInfo.rss = static_cast<uint64_t>(atoi(v[EnumProcessStat::rss].c_str()));
+    processInfo.processor = static_cast<int>(atoi(v[EnumProcessStat::processor].c_str()));
 
     return EXECUTE_SUCCESS;
+}
+
+static bool compare(const tagPidTotal &p1, const tagPidTotal &p2) {
+    return p1.total > p2.total || (p1.total == p2.total && p1.pid < p2.pid);
+}
+
+static bool comparePointer(const tagPidTotal *p1, const tagPidTotal *p2) {
+    return compare(*p1, *p2);
 }
 
 void ProcessCollector::CopyAndSortByCpu(const std::vector<pid_t> &pids, std::vector<pid_t> &sortPids) {
@@ -341,15 +502,16 @@ void ProcessCollector::CopyAndSortByCpu(const std::vector<pid_t> &pids, std::vec
 
     std::vector<tagPidTotal> sortPidInfos;
     {
-        auto currentPidMap = std::make_shared<map<pid_t, uint64_t>>();
-        fnGetPidsMetric(pids, *currentPidMap);
+        auto currentPidMap = std::make_shared<std::map<pid_t, uint64_t>>();
+        fnGetPidsMetric(pids, *currentPidMap); // GetPidsCpu
 
         if (!mLastPidCpuMap) {
             mLastPidCpuMap = currentPidMap;
-            if (mTopType == Cpu) {
-                // cpu是增量指标，第一次只能做为基础值，此时无法进行排序
-                return;
-            }
+            // if (mTopType == Cpu) {
+            //     // cpu是增量指标，第一次只能做为基础值，此时无法进行排序
+            //     return;
+            // }
+            return ;
         }
 
         sortPidInfos.reserve(currentPidMap->size());

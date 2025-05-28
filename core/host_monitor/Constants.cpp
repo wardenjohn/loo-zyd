@@ -22,6 +22,7 @@ namespace logtail {
 
 std::filesystem::path PROCESS_DIR = "/proc";
 const std::filesystem::path PROCESS_STAT = "stat";
+const std::filesystem::path PROCESS_STATM = "statm";
 const int EXECUTE_SUCCESS = 0;
 const int EXECUTE_FAIL = -1;
 const int64_t SYSTEM_HERTZ = sysconf(_SC_CLK_TCK);
