@@ -208,6 +208,31 @@ struct ProcessMemoryInformation {
     uint64_t pageFaults = 0;
 };
 
+// 进程拥有信息
+struct ProcessExe {
+    std::string name;
+    std::string cwd;
+    std::string root;
+};
+
+// 进程打开文件数
+struct ProcessFd {
+    uint64_t total = 0;
+    bool exact = true;  // total是否是一个精确值，在Linux下进程打开文件数超10,000时，将不再继续统计，以防出现性能问题
+};
+
+struct ProcessCredName {
+    std::string user;
+    std::string group;
+};
+
+struct ProcessCred {
+    uid_t uid;   //real user ID
+    gid_t gid;   //real group ID
+    uid_t euid;  //effective user ID
+    gid_t egid;  //effective group ID
+};
+
 struct ProcessAllStat {
         ProcessStat processState;
         ProcessInfo processInfo;
@@ -216,6 +241,93 @@ struct ProcessAllStat {
         double memPercent = 0.0;
         uint64_t fdNum = 0;
         bool fdNumExact = true;
+};
+
+// 自监控结构体
+struct ProcessSelfInfo {
+    pid_t pid = 0;
+    //系统时间，代码为秒
+    std::string sysUpTime;
+    std::string sysRunTime;
+    //agent cpu指标
+    std::string startTime;
+    std::string runTime;
+    uint64_t cpuTotal = 0;
+    double cpuPercent = 0;
+    //agent 内存指标
+    uint64_t memResident = 0;
+    uint64_t memSize = 0;
+    uint64_t memPrivate = 0;
+    uint64_t memShare = 0;
+    double memPercent = 0;
+
+    uint64_t openfiles = 0;
+    bool openFilesExact = true;
+    uint64_t threadCount = 0;
+    std::string version;
+
+    //agent进程参数
+    std::string exeName;
+    std::string exeCwd;
+    std::string exeRoot;
+    std::string exeArgs;
+    //采集指标
+    uint64_t collectCount = 0;
+    double lastCollectCost = 0;
+    std::string lastCollectTime;
+    std::string curCollectTime;
+    //数据上报指标
+    int lastCommitCode = 0;
+    double lastCommitCost = 0;
+    std::string lastCommitMsg;
+    //心跳数据统计
+    uint64_t putMetricFailCount = 0;
+    uint64_t putMetricSuccCount = 0;
+    double putMetricFailPerMinute = 0;
+    //心跳数据统计
+    uint64_t pullConfigFailCount = 0;
+    uint64_t pullConfigSuccCount = 0;
+    double pullConfigFailPerMinute = 0;
+    //自我状态监控
+    int coredumpCount = 0;
+    int restartCount = 0;
+    int resourceExceedCount = 0;
+};
+
+
+struct SystemTaskInfo {
+    uint64_t threadCount = 0;
+    uint64_t processCount = 0;
+    uint64_t zombieProcessCount = 0;
+};
+
+struct TagItem {
+    std::string key;
+    std::string value;
+
+    TagItem() = default;
+
+    TagItem(const std::string &k, const std::string &v) : key(k), value(v) {}
+};
+
+struct ProcessCollectItem
+{
+    std::string name;
+    std::string processName;
+    std::string processUser;
+    // std::string command;
+    std::vector<TagItem> tags;
+
+    bool isEmpty() const {
+        return name.empty() && processName.empty() && processUser.empty();
+    }
+};
+
+struct ProcessMatchInfo : ProcessCollectItem {
+    std::vector<pid_t> pids;
+
+    bool isMatch(const ProcessInfo &processInfo) const;
+    bool appendIfMatch(const ProcessInfo &processInfo);
 };
 
 class ProcessCollector : public BaseCollector {
@@ -257,6 +369,38 @@ private:
 
     int GetProcessMemory(pid_t pid, ProcessMemoryInformation &processMemory);
 
+    int GetProcessFdNumber(pid_t pid, ProcessFd &processFd);
+
+    int GetProcessInfo(pid_t pid, ProcessInfo &processInfo);
+
+    int GetProcessExe(pid_t pid, ProcessExe &processExe);
+
+    int GetProcessCredName(pid_t pid,ProcessCredName &processCredName);
+
+    int GetProcessArgs(pid_t pid, std::vector<std::string> &args);
+
+    /////////// collect matched
+
+    void collectMatched(const std::vector<pid_t> &pids);
+
+    void GetProcessMatchInfos(const std::vector<pid_t> &pids, std::vector<ProcessMatchInfo> &matchInfos);
+
+    ///////// SelfTask
+    void collectSelf(void);
+
+    int GetProcessSelfInfo(ProcessSelfInfo &self);
+
+    int SicGetUpTime(double &uptime);
+
+    int64_t GetUptime(bool isMicro);
+
+    std::string GetTimeStr(int64_t micros);
+
+    /////// SysTasks
+    void collectSysTasks(const std::vector<pid_t> &pids);
+
+    int GetSystemTask(const std::vector<pid_t> &pids, SystemTaskInfo &systemTaskInfo);
+
 protected:
 
     int GetProcessCpuInformation(pid_t pid, ProcessCpuInformation &information,bool includeCTime);
@@ -273,7 +417,10 @@ private:
     int mSelfPid = 0;
     int mParentPid = 0;
     int mTopN=5;
+    uint64_t mTotalMemory = 0;
     std::chrono::steady_clock::time_point mProcessSortCollectTime;
+    std::chrono::steady_clock::time_point mLastCollectSteadyTime;
+    decltype(ProcessCpuInformation{}.total) mLastAgentTotalMillis = 0;
     const int mProcessSilentCount=1000;
     std::shared_ptr<std::map<pid_t, uint64_t>> mLastPidCpuMap;
 

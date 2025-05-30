@@ -26,8 +26,8 @@
 namespace logtail {
 
 const std::string InputHostMonitor::sName = "input_host_monitor";
-const uint32_t kMinInterval = 5; // seconds
-const uint32_t kDefaultInterval = 15; // seconds
+const uint32_t kMinInterval = 1; // seconds
+const uint32_t kDefaultInterval = 1; // seconds
 
 bool InputHostMonitor::Init(const Json::Value& config, Json::Value& optionalGoPipeline) {
     std::string errorMsg;

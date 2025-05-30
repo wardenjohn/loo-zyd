@@ -21,6 +21,8 @@
 #include <algorithm>
 #include <thread>
 #include <boost/program_options.hpp>
+#include <pwd.h>
+#include <grp.h>
 
 #include "boost/algorithm/string.hpp"
 #include "boost/algorithm/string/split.hpp"
@@ -128,6 +130,9 @@ bool ProcessCollector::Collect(const HostMonitorTimerEvent::CollectConfig& colle
     RemovePid(pids, mSelfPid, mParentPid);
 
     collectTopN(pids);
+    collectMatched(pids);
+    // collectSelf();
+    // collectSysTasks(pids, collectData);
 
     struct MetricDef {
         const char* name;
@@ -167,6 +172,8 @@ bool ProcessCollector::Collect(const HostMonitorTimerEvent::CollectConfig& colle
     return true;
 }
 
+
+//////////////////////////////////////////////
 bool ProcessCollector::GetPids(std::vector<pid_t>& pids) {
     pids.clear();
     bool ret;
@@ -236,6 +243,7 @@ void ProcessCollector::collectTopN(const std::vector<pid_t> &pids) {
 
     GetTopNProcessStat(sortPids, mTopN, topN);
 
+    // TopN数据格式话
 }
 
 // 获取TopN的进程信息
@@ -270,6 +278,192 @@ int ProcessCollector::GetProcessAllStat(pid_t pid, ProcessAllStat &processStat) 
     if (ret != 0) {
         return ret;
     }
+
+    ProcessFd procFd;
+    int res = GetProcessFdNumber(pid, procFd);
+    if (res != EXECUTE_SUCCESS) {
+        return -1;
+    }
+    processStat.fdNum = procFd.total;
+    processStat.fdNumExact = procFd.exact;
+
+    res = GetProcessInfo(pid, processStat.processInfo);
+    if (res != 0) {
+        return -1;
+    }
+
+}
+
+int ProcessCollector::GetProcessCredName(pid_t pid,ProcessCredName &processCredName) {
+    std::vector<std::string> processStatusLines = {};
+    std::string errorMessage;
+    std::filesystem::path path = PROCESS_DIR / std::to_string(pid) / PROCESS_STATUS;
+    if (!GetHostSystemStatWithPath(processStatusLines, errorMessage, path)
+        || processStatusLines.size() < 2) {
+        return EXECUTE_FAIL;
+    }
+
+    ProcessCred cred{};
+    for (size_t i = 2; i < processStatusLines.size(); ++i) {
+        auto metric = split(processStatusLines[i], '\t', false);
+        if (metric.size() >= 3 && metric.front() == "Uid:") {
+            int index = 1;
+            cred.uid = static_cast<uint64_t>(std::stoull(metric[index++]));
+            cred.euid = static_cast<uint64_t>(std::stoull(metric[index]));
+        } else if (metric.size() >= 3 && metric.front() == "Gid:") {
+            int index = 1;
+            cred.gid = static_cast<uint64_t>(std::stoull(metric[index++]));
+            cred.egid = static_cast<uint64_t>(std::stoull(metric[index]));
+        }
+    }
+
+    passwd *pw = nullptr;
+    passwd pwbuffer;
+    char buffer[2048];
+    if (getpwuid_r(cred.uid, &pwbuffer, buffer, sizeof(buffer), &pw) != 0) {
+        return EXECUTE_FAIL;
+    }
+    if (pw == nullptr) {
+        return EXECUTE_FAIL;
+    }
+    processCredName.user = pw->pw_name;
+
+    group *grp = nullptr;
+    group grpbuffer{};
+    char groupBuffer[2048];
+    if (getgrgid_r(cred.gid, &grpbuffer, groupBuffer, sizeof(groupBuffer), &grp)) {
+        return EXECUTE_FAIL;
+    }
+
+    if (grp != nullptr && grp->gr_name != nullptr) {
+        processCredName.group = grp->gr_name;
+    }
+
+    return EXECUTE_SUCCESS;
+}
+
+int ProcessCollector::GetProcessArgs(pid_t pid, std::vector<std::string> &args) {
+    std::vector<std::string> args_content;
+    std::string cmdline;
+    std::string errorMessage;
+    std::filesystem::path procArgsPath = PROCESS_DIR / std::to_string(pid) / PROCESS_CMDLINE;
+    if (!GetHostSystemStatWithPath(args_content, errorMessage, procArgsPath)) {
+        return EXECUTE_FAIL;
+    }
+    cmdline = args_content.front();
+    if (cmdline.empty()) {
+        return errorMessage.empty() ? EXECUTE_FAIL : EXECUTE_SUCCESS;
+    }
+    auto cmdlineMetric = split(cmdline, '\0', {false, true});
+    for (auto const &metric: cmdlineMetric) {
+        args.push_back(metric);
+    }
+    return EXECUTE_SUCCESS;
+}
+
+int ProcessCollector::GetProcessInfo(pid_t pid, ProcessInfo &processInfo) {
+    std::vector<std::string> args;
+    
+    if (GetProcessArgs(pid, args) != EXECUTE_SUCCESS) {
+        std::cout << "Get Process  Args Failed" << std::endl;
+    }
+
+    std::string name,cwd,root,path;
+    ProcessExe processExe;
+    int status = GetProcessExe(pid, processExe);
+    if (status != EXECUTE_SUCCESS) {
+        if (!args.empty()) {
+            path = args.front();
+        }
+    } else {
+        path = processExe.name;
+        cwd = processExe.cwd;
+        root = processExe.root;
+    }
+
+    if (path.empty()) {
+        name = "unknown";
+    }
+
+    std::string user = "unknown";
+    ProcessCredName processCredName;
+
+    if (GetProcessCredName(pid, processCredName) == EXECUTE_SUCCESS) {
+        user = processCredName.user;
+    }
+
+    processInfo.pid = pid;
+    processInfo.name = name;
+    processInfo.path = path;
+    processInfo.cwd = cwd;
+    processInfo.root = root;
+    processInfo.args = "";
+    processInfo.user = user;
+
+    return EXECUTE_SUCCESS;
+
+}
+
+static std::string ReadLink(const std::string &path) {
+    std::string buffer;
+    buffer.resize(PATH_MAX);
+    ssize_t ret = readlink(path.c_str(), &buffer[0], buffer.size());
+    if (ret < 0) {
+        return "";
+    }
+    buffer.resize(ret);
+    return buffer;
+}
+
+int ProcessCollector::GetProcessExe(pid_t pid, ProcessExe &processExe) {
+    std::filesystem::path procCwdPath = PROCESS_DIR / std::to_string(pid) / PROCESS_CWD;
+    std::filesystem::path procExePath = PROCESS_DIR / std::to_string(pid) / PROCESS_EXE;
+    std::filesystem::path procRootPath = PROCESS_DIR / std::to_string(pid) / PROCESS_ROOT;
+    struct {
+        std::filesystem::path path;
+        std::string &var;
+    } files[] = {
+            {procCwdPath,  processExe.cwd},
+            {procExePath,  processExe.name},
+            {procRootPath, processExe.root},
+    };
+
+    for (auto &entry: files) {
+        std::string buffer = ReadLink(entry.path.string());
+        if (buffer.empty()) {
+            return EXECUTE_FAIL;
+        }
+        entry.var = buffer;
+    }
+}
+
+//获取进程文件数信息
+int ProcessCollector::GetProcessFdNumber(pid_t pid, ProcessFd &processFd) {
+    std::filesystem::path procFdPath = PROCESS_DIR / std::to_string(pid) / PROCESS_FD;
+    std::string errorMessage;
+    const int maxCount = 10000;
+    int count = 0;
+    int ret;
+
+    try{
+        ret = WalkAllDigitDirs(procFdPath, [&count](const std::string &) {
+            ++count;
+            if (count >= maxCount) {
+                throw std::exception();
+            }
+        });
+        if (ret == EXECUTE_SUCCESS) {
+            processFd.total = count;
+            processFd.exact = true;
+        }
+    } catch (const std::exception& e) {
+        errorMessage = e.what();
+        LOG_WARNING(sLogger, ("Get Process Fd Number Exception", "Get Process Fd Count Lager  Than 10000")("error msg", errorMessage));
+        ret = EXECUTE_SUCCESS;
+        processFd.total = count;
+        processFd.exact = true;
+    }
+    return ret;
 }
 
 // 获取pid的内存信息
@@ -284,7 +478,6 @@ int ProcessCollector::GetProcessMemory(pid_t pid, ProcessMemoryInformation &proc
     processMemory.majorFaults = linuxProcessInfo.majorFaults;
     processMemory.pageFaults = linuxProcessInfo.minorFaults + linuxProcessInfo.majorFaults;
 
-    std::vector<std::string> lines = {};
     const auto procStatm = PROCESS_DIR / std::to_string(pid) / PROCESS_STATM;
 
     std::vector<std::string> loadLines;
@@ -292,7 +485,7 @@ int ProcessCollector::GetProcessMemory(pid_t pid, ProcessMemoryInformation &proc
     if (!GetHostSystemStatWithPath(loadLines, errorMessage, procStatm)) {
         return EXECUTE_FAIL;
     }
-    std::vector<std::string> processMemoryMetric = split((loadLines.empty() ? "" : lines.front()), ' ', false);
+    std::vector<std::string> processMemoryMetric = split((loadLines.empty() ? "" : loadLines.front()), ' ', false);
     if (processMemoryMetric.size() < 3) {
         return EXECUTE_FAIL;
     }
@@ -540,6 +733,173 @@ void ProcessCollector::CopyAndSortByCpu(const std::vector<pid_t> &pids, std::vec
     }
     sortPids = mSortPids;
     mProcessSortCollectTime = steady_clock::now();
+}
+
+//////////////////////////
+// collected Matched
+//////////////////////////
+
+bool ProcessMatchInfo::isMatch(const ProcessInfo &pi) const {
+    if (!this->processName.empty() && this->processName != pi.name) {
+        return false;
+    }
+    if (!this->processUser.empty() && this->processUser != pi.user) {
+        return false;
+    }
+    if (!this->name.empty()) {
+        const std::string *keys[] = {&pi.path, &pi.name, &pi.user, &pi.args,};
+        bool matched = false;
+        for (size_t i = 0; !matched && i < sizeof(keys) / sizeof(keys[0]); i++) {
+            matched = StringUtils::Contain(StringUtils::ToLower(*keys[i]), this->name);
+        }
+        if (!matched) {
+            return false;
+        }
+    }
+    return !this->isEmpty();
+}
+bool ProcessMatchInfo::appendIfMatch(const ProcessInfo &processInfo) {
+    bool match = isMatch(processInfo);
+    if (match) {
+        pids.push_back(processInfo.pid);
+    }
+    return match;
+}
+
+void ProcessCollector::collectMatched(const std::vector<pid_t> &pids) {
+
+    std::vector<ProcessMatchInfo> processMatchInfos;
+    GetProcessMatchInfos(pids, processMatchInfos);
+
+    //进程匹配数据格式化
+}
+
+void ProcessCollector::GetProcessMatchInfos(const std::vector<pid_t> &pids, std::vector<ProcessMatchInfo> &matchInfos) {
+
+}
+
+//////////////////////////
+// collected Self
+//////////////////////////
+void ProcessCollector::collectSelf(void) {
+    // agent自监控
+    ProcessSelfInfo processSelfInfo;
+    GetProcessSelfInfo(processSelfInfo);
+
+    //agent自身数据格式化
+    
+}
+
+int ProcessCollector::SicGetUpTime(double &uptime) {
+    std::vector<std::string> uptimeLines;
+    std::string errorMessage;
+    std::filesystem::path path = PROCESS_DIR / PROCESS_UPTIME;
+    int ret = GetHostSystemStatWithPath(uptimeLines, errorMessage, path);
+    if (ret == EXECUTE_SUCCESS) {
+        std::vector<std::string> uptimeMetric = split((uptimeLines.empty() ? "" : uptimeLines.front()), ' ', true);
+        uptime = static_cast<double>(std::stoll(uptimeMetric.front()));
+    }
+    return ret;
+}
+
+// Get UpTime in seconds
+int64_t ProcessCollector::GetUptime(bool isMicro) {
+    double upTime = 0.0;
+    int ret = SicGetUpTime(upTime);
+    if (ret != EXECUTE_SUCCESS) {
+        return 0;
+    }
+    if (isMicro) {
+        upTime *= 1000 * 1000;
+    }
+    return static_cast<int64_t>(upTime);
+}
+
+
+int ProcessCollector::GetProcessSelfInfo(ProcessSelfInfo &self) {
+    pid_t pid = mSelfPid;
+    self.pid = pid;
+
+    microseconds upTime = std::chrono::microseconds{GetUptime(true)};
+    microseconds now = duration_cast<microseconds>(system_clock::now().time_since_epoch());
+    self.sysUpTime = (now - upTime).count();
+    self.sysRunTime = logtail::NumberToString(upTime.count() / (1000 * 1000)) + "s";
+
+    ProcessCpuInformation processCpu;
+    if (GetProcessCpuInformation(pid, processCpu, true) == 0) {
+        //不能直接使用percent，因为TOPN时可以计算了agent，秒级以内读取进程CPU使用率会导致数据不准;
+        std::cout << "processCpu.startTime:" << processCpu.startTime << std::endl;
+        self.startTime = (processCpu.startTime * 1000);
+        self.runTime = NumberToString((now.count() - processCpu.startTime * 1000) / (1000 * 1000)) + "s";
+        if (IsZero(mLastCollectSteadyTime)) {
+            self.cpuPercent = 0.0;
+        } else {
+            auto dura = steady_clock::now() - mLastCollectSteadyTime;
+            double percent = 1000.0 * (processCpu.total - mLastAgentTotalMillis) / dura.count();
+            self.cpuPercent = 100.0 * percent;
+        }
+        mLastAgentTotalMillis = processCpu.total;
+        self.cpuTotal = processCpu.total;
+    }
+
+    ProcessMemoryInformation processMemory;
+    if (GetProcessMemory(pid, processMemory) == 0) {
+        self.memResident = processMemory.resident;
+        self.memSize = processMemory.size;
+        if (processMemory.share < mTotalMemory) {
+            self.memPrivate = processMemory.resident - processMemory.share;
+            self.memShare = processMemory.share;
+        }
+        self.memPercent = mTotalMemory > 0 ? 100.0 * processMemory.resident / mTotalMemory : 0;
+    }
+
+    ProcessFd procFd;
+    int res = GetProcessFdNumber(pid, procFd);
+
+    if (res == 0) {
+        self.openfiles = procFd.total;
+        self.openFilesExact = procFd.exact;
+    }
+
+    ProcessInfo processInfo;
+    if (GetProcessInfo(pid, processInfo) == 0) {
+        self.exeName = processInfo.path;
+        self.exeCwd = processInfo.cwd;
+        self.exeRoot = processInfo.root;
+        self.exeArgs = processInfo.args;
+    }
+
+    ProcessStat processState;
+    if (GetProcessState(pid, processState) == 0) {
+        self.threadCount = processState.numThreads;
+    }
+}
+
+//////////////////////////
+// collected Sys Task
+//////////////////////////
+
+void ProcessCollector::collectSysTasks(const std::vector<pid_t> &pids) {
+    //统计任务数(只有linux统计)
+    //系统任务数据格式化
+    SystemTaskInfo systemTaskInfo;
+    GetSystemTask(pids, systemTaskInfo);
+
+    // 收集完数据上传
+}
+
+int ProcessCollector::GetSystemTask(const std::vector<pid_t> &pids, SystemTaskInfo &systemTaskInfo) {
+    for (pid_t pid: pids) {
+        ProcessStat processState;
+        if (GetProcessState(pid, processState) == 0) {
+            systemTaskInfo.threadCount += processState.numThreads;
+            if (processState.state == 'Z') {
+                systemTaskInfo.zombieProcessCount++;
+            }
+        }
+    }
+    systemTaskInfo.processCount = pids.size();
+    return 0;
 }
 
 } // namespace logtail
