@@ -416,8 +416,5 @@ std::string NumberToString(const T &v) {
     return ss.str();
 }
 
-std::string ToLower(const std::string &s) {
-    return boost::to_lower_copy(s);
-}
 
 } // namespace logtail

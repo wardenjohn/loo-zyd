@@ -89,8 +89,9 @@ public:
     static const std::string sName;
     const std::string& Name() const override { return sName; }
 
-private:
     bool GetHostMeminfoStat(MemoryInformation& memStat, SwapInformation& swapStat);
+
+private:
     bool GetMemoryStat(MemoryInformation& information, std::vector<std::string>& memoryLines);
     uint64_t GetMemoryValue(char unit, uint64_t value);
     void completeMemoryInformation(MemoryInformation &memInfo);
