@@ -221,6 +221,44 @@ struct ProcessAllStat {
     bool fdNumExact = true;
 };
 
+struct ProcessPushMertic {
+    pid_t pid;
+    std::string name;
+    double cpuPercent = 0.0;
+    double memPercent = 0.0;
+    double fdNum = 0.0;
+    double numThreads  = 0.0;
+    double allNumProcess = 0.0;
+
+    static inline const FieldName<ProcessPushMertic> processPushMerticFields[] = {
+        FIELD_ENTRY(ProcessPushMertic, cpuPercent);
+        FIELD_ENTRY(ProcessPushMertic, memPercent);
+        FIELD_ENTRY(ProcessPushMertic, fdNum);
+        FIELD_ENTRY(ProcessPushMertic, numThreads);
+        FIELD_ENTRY(ProcessPushMertic, allNumProcess);
+    }
+
+    static void enumerate(const std::function<void(const FieldName<ProcessPushMertic, double>&)>& callback) {
+        for (const auto& field : processPushMerticFields) {
+            callback(field);
+        }
+    }
+};
+
+struct VMProcessNumStat {
+    uint64_t vmProcessNum = 0;
+
+    FieldName<VMProcessNumStat> vmProcessNumStatMerticFields[] = {
+        FIELD_ENTRY(VMProcessNumStat, vmProcessNum);
+    }
+
+    static void enumerate(const std::function<void(const FieldName<VMProcessNumStat, uint64_t)>& callback) {
+        for (const auto& field : vmProcessNumStatMerticFields) {
+            callback(field);
+        }
+    }
+}
+
 struct SystemTaskInfo {
     uint64_t threadCount = 0;
     uint64_t processCount = 0;
@@ -287,18 +325,20 @@ private:
     std::vector<pid_t> mSortPids;
     int mSelfPid = 0;
     int mParentPid = 0;
-    int mTopN=5;
     uint64_t mTotalMemory = 0;
     std::chrono::steady_clock::time_point mProcessSortCollectTime;
     std::chrono::steady_clock::time_point mLastCollectSteadyTime;
     decltype(ProcessCpuInformation{}.total) mLastAgentTotalMillis = 0;
-    const int mProcessSilentCount=1000;
     std::shared_ptr<std::map<pid_t, uint64_t>> mLastPidCpuMap;
     std::map<pid_t, ProcessCpuInformation> cpuTimeCache;
-    MetricCalculate<ProcessCpuInformation> mCalculateCpuInformaton;
-    MetricCalculate<ProcessMemoryInformation> mCalculateMemoryInformaton;
-    MetricCalculate<ProcessFd> mCalculateFd;
-    MetricCalculate<ProcessStat> mCalculateProcessStat;
+    std::map<pid_t, MetricCalculate<ProcessPushMertic>> mProcessPushMertic; //记录每个pid对应的多值体系
+    MetricCalculate<VMProcessNumStat> mVMProcessNumStat;
+    std::map<pid_t, double> mAvgProcessCpuPercent;
+    std::map<pid_t, double> mAvgProcessMemPercent;
+    std::map<pid_t, double> mAvgProcessFd;
+    std::map<pid_t, double> mAvgProcessNumThreads;
+    std::map<pid_t, double> mMinProcessNumThreads;
+    std::map<pid_t, double> mMaxProcessNumThreads;
 };
 
 } // namespace logtail

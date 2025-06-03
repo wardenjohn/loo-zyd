@@ -106,7 +106,7 @@ ProcessCollector::ProcessCollector(){
     Init();
 }
 
-int ProcessCollector::Init() {
+int ProcessCollector::Init(int totalCount) {
     MemCollector m{};
     MemoryInformation ms{};
     SwapInformation ss{};
@@ -114,7 +114,8 @@ int ProcessCollector::Init() {
     m.GetHostMeminfoStat(ms, ss);
     mTotalMemory = ms.total;
 
-    std::cout << mTotalMemory << std::endl;
+    mTotalCount = totalCount;
+
     return 0;
 }
 
@@ -141,49 +142,145 @@ bool ProcessCollector::Collect(const HostMonitorTimerEvent::CollectConfig& colle
 
     int processNum = allPidStats.size();
 
-    std::cout << "processNum: " << processNum << std::endl;
-    for (auto stat : allPidStats) {
-        std::cout << "pid: " << stat.pid << "; name:" << stat.processInfo.name << "; user : "<< stat.processInfo.user<< std::endl;
-        std::cout << " cpu percent: " << stat.processCpu.percent << "mem percent" << stat.memPercent << std::endl;
-        std::cout << "fdNum: " << stat.fdNum << "; thread count: " << stat.processState.numThreads << std::endl;
+    VMProcessNumStat processNumStat;
+    processNumStat.vmProcessNum = processNum;
 
+    std::vector<ProcessPushMertic> pushMerticObject;
+    for (auto &stat : allPidStats) {
+        ProcessPushMertic pushMertic;
+        pushMertic.pid = stat.pid;
+        pushMertic.allNumProcess = processNum;
+        pushMertic.fdNum  = stat.fdNum;
+        pushMertic.numThreads = stat.processState.numThreads;
+        pushMertic.memPercent = stat.memPercent;
+        pushMertic.cpuPercent = stat.processCpu.percent;
+        pushMertic.name = stat.processInfo.name;
     }
 
-    struct MetricDef {
-        const char* name;
-        const char* mode;
-        double value;
-    } metrics[] = {
-        {"process.number", "Average", 1.1},
-        {"process.number", "Maximum", 1.1},
-        {"process.number", "Minimum", 1.1},
-        {"vm.ProcessCount", "Average", 1.2},
-        {"vm.ProcessCount", "Maximum", 1.1},
-        {"vm.ProcessCount", "Minimum", 1.1},
-        {"process.openfile", "Average", 1.31},
-        {"process.openfile", "Maximum", 1.351},
-        {"process.openfile", "Minimum", 1.16},
-        {"process.cpu", "Average", 1.71},
-        {"process.cpu", "Maximum", 1.81},
-        {"process.cpu", "Minimum", 1.19},
-        {"process.memory", "Average", 1.10},
-        {"process.memory", "Maximum", 1.14},
-        {"process.memory", "Minimum", 1.7},
-        {"process.expend", "Average", 1.18},
-        {"process.expend", "Maximum", 1.91},
-        {"process.expend", "Minimum", 1.13},
-    };
-
-    for (const auto& def : metrics) {
-        auto* metricEvent = group->AddMetricEvent(true);
-        if (!metricEvent) {
-            continue;
+    // set calculation
+    // 给每个pid设定其多值体系
+    mVMProcessNumStat.AddValue(processNumStat);
+    for (auto &metric : pushMerticObject) {
+        uint64_t thisPid = metric.pid;
+        auto met = mProcessPushMertic.find(thisPid);
+        if (met != mProcessPushMertic.end()) {
+            // 这个pid存在了
+            auto metricObj = met->second;
+        } else {
+            // 这个pid不存在，需要创建一个多值体系
+            mProcessPushMertic.insert(std::make_pair(thisPid, metric));
+            auto met = mProcessPushMertic.find(thisPid);
+            auto metricObj = met->second;
         }
-        metricEvent->SetName(def.name);
-        metricEvent->SetTimestamp(now, 0);
-        metricEvent->SetValue<UntypedSingleValue>(def.value);
-        metricEvent->SetTag(kMetricLabelProcess, def.mode);
+        // 多值添加对象
+        metricObj.AddValue(metric);
     }
+
+    VMProcessNumStat minVMProcessNum, maxVMProcessNum, avgVMProcessNum, lastVMProcessNum;
+    mVMProcessNumStat.Stat(minVMProcessNum, maxVMProcessNum, avgVMProcessNum, &lastVMProcessNum);
+
+    for (auto &metric : pushMerticObject) {
+        uint64_t thisPid = metric.pid;
+        auto met = mProcessPushMertic.find(thisPid);
+        // here, all pid will have cache in mProcessPushMertic
+        auto metricObj = met->second;
+
+        // 分别计算每个指标下对应pid的多值
+        ProcessPushMertic minMetric, maxMetric, avgMetric, lastMetric;
+        metricObj.Stat(minMetric, maxMetric, avgMetric, &lastMetric);
+        mAvgProcessCpuPercent.insert(std::make_pair(thisPid, avgMetric.percent));
+        mAvgProcessMemPercent.insert(std::make_pair(thisPid, avgMetric.memPercent));
+        mAvgProcessFd.insert(std::make_pair(thisPid, avgMetric.fdNum));
+        mMinProcessNumThreads.insert(std::make_pair(thisPid, minMetric.numThreads));
+        mMaxProcessNumThreads.insert(std::make_pair(thisPid, maxMetric.numThreads));
+        mAvgProcessNumThreads.insert(std::make_pair(thisPid, avgMetric.numThreads));
+    }
+    // 每个pid下的多值体系添加完毕
+    mCount++;
+    if (mCount < mTotalCount) {
+        return true;
+    }
+
+    // 指标推送
+    // for (const auto& def : metrics) {
+    //     auto* metricEvent = group->AddMetricEvent(true);
+    //     if (!metricEvent) {
+    //         continue;
+    //     }
+    //     metricEvent->SetName(def.name);
+    //     metricEvent->SetTimestamp(now, 0);
+    //     metricEvent->SetValue<UntypedSingleValue>(def.value);
+    //     metricEvent->SetTag(kMetricLabelProcess, def.mode);
+    // }
+    MetricEvent* metricEvent = group->AddMetricEvent(true);
+    if (!metricEvent) {
+        return false;
+    }
+    const time_t now = time(nullptr);
+    metricEvent->SetTimestamp(now, 0);
+    metricEvent->SetValue<UntypedMultiDoubleValues>(metricEvent);
+    auto* multiDoubleValues = metricEvent->MutableValue<UntypedMultiDoubleValues>();
+    std::vector<std::string> vmNames = {
+        "vm_process_minimum",
+        "vm_process_maximum",
+        "vm_process_average"
+    } 
+    std::vector<double> vmValues = {
+        minVMProcessNum.vmProcessNum,
+        maxVMProcessNum.vmProcessNum,
+        avgVMProcessNum.vmProcessNum
+    }
+    for (size_t i = 0; i < ProcessAllStat.size(); ++i) {
+        // 上传每一个pid对应的值
+        double value = 0.0;
+        pid_t pid = ProcessAllStat[i].pid;
+        // cpu percent
+        value = mAvgProcessCpuPercent.find(pid)->second.cpuPercent;
+        multiDoubleValues->SetValue("process_cpu_average",
+                                    UntypedMultiDoubleValue{UntypedValueMetricType::MetricTypeGauge, value});
+        multiDoubleValues->SetTag("pid", std::to_string(pid));
+        // mem percent
+        value = mAvgProcessMemPercent.find(pid)->second.memPercent;
+        multiDoubleValues->SetValue("process_memory_average",
+                                    UntypedMultiDoubleValue{UntypedValueMetricType::MetricTypeGauge, value});
+        multiDoubleValues->SetTag("pid", std::to_string(pid));
+        // open file number
+        value = mAvgProcessFd.find(pid)->second.fdNum;
+        multiDoubleValues->SetValue("process_openfile_average",
+                                    UntypedMultiDoubleValue{UntypedValueMetricType::MetricTypeGauge, value});
+        multiDoubleValues->SetTag("pid", std::to_string(pid));
+        // process number
+        value = mAvgProcessNumThreads.find(pid)->second.numThreads;
+        multiDoubleValues->SetValue("process_number_average",
+                                    UntypedMultiDoubleValue{UntypedValueMetricType::MetricTypeGauge, value});
+        multiDoubleValues->SetTag("pid", std::to_string(pid));
+
+        value = mMaxProcessNumThreads.find(pid)->second.numThreads;
+        multiDoubleValues->SetValue("process_number_maximum",
+                                    UntypedMultiDoubleValue{UntypedValueMetricType::MetricTypeGauge, value});
+        multiDoubleValues->SetTag("pid", std::to_string(pid));
+
+        value = mMinProcessNumThreads.find(pid)->second.numThreads;
+        multiDoubleValues->SetValue("process_number_minimum",
+                                    UntypedMultiDoubleValue{UntypedValueMetricType::MetricTypeGauge, value});
+        multiDoubleValues->SetTag("pid", std::to_string(pid));
+    }
+    // 最后vm的系统信息上传
+    for (size_t  i = 0; i < vmNames.size(); ++i) {
+        multiDoubleValues->SetValue(std::string(vmNames[i]),
+                                    UntypedMultiDoubleValue{UntypedValueMetricType::MetricTypeGauge, vmValues[i]});
+    }
+
+    //清空所有多值体系，因为有的pid后面可能会消失
+    mCount = 0;
+    mVMProcessNumStat.Reset();
+    mProcessPushMertic.clear();
+    mAvgProcessCpuPercent.clear();
+    mAvgProcessMemPercent.clear();
+    mAvgProcessFd.clear();
+    mMinProcessNumThreads.clear();
+    mMaxProcessNumThreads.clear();
+    mAvgProcessNumThreads.clear();
     return true;
 }
 
