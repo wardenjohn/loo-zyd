@@ -231,12 +231,12 @@ struct ProcessPushMertic {
     double allNumProcess = 0.0;
 
     static inline const FieldName<ProcessPushMertic> processPushMerticFields[] = {
-        FIELD_ENTRY(ProcessPushMertic, cpuPercent);
-        FIELD_ENTRY(ProcessPushMertic, memPercent);
-        FIELD_ENTRY(ProcessPushMertic, fdNum);
-        FIELD_ENTRY(ProcessPushMertic, numThreads);
-        FIELD_ENTRY(ProcessPushMertic, allNumProcess);
-    }
+        FIELD_ENTRY(ProcessPushMertic, cpuPercent),
+        FIELD_ENTRY(ProcessPushMertic, memPercent),
+        FIELD_ENTRY(ProcessPushMertic, fdNum),
+        FIELD_ENTRY(ProcessPushMertic, numThreads),
+        FIELD_ENTRY(ProcessPushMertic, allNumProcess),
+    };
 
     static void enumerate(const std::function<void(const FieldName<ProcessPushMertic, double>&)>& callback) {
         for (const auto& field : processPushMerticFields) {
@@ -246,18 +246,18 @@ struct ProcessPushMertic {
 };
 
 struct VMProcessNumStat {
-    uint64_t vmProcessNum = 0;
+    double vmProcessNum = 0;
 
-    FieldName<VMProcessNumStat> vmProcessNumStatMerticFields[] = {
-        FIELD_ENTRY(VMProcessNumStat, vmProcessNum);
-    }
+    static inline const FieldName<VMProcessNumStat> vmProcessNumStatMerticFields[] = {
+        FIELD_ENTRY(VMProcessNumStat, vmProcessNum),
+    };
 
-    static void enumerate(const std::function<void(const FieldName<VMProcessNumStat, uint64_t)>& callback) {
+    static void enumerate(const std::function<void(const FieldName<VMProcessNumStat, double>&)>& callback) {
         for (const auto& field : vmProcessNumStatMerticFields) {
             callback(field);
         }
     }
-}
+};
 
 struct SystemTaskInfo {
     uint64_t threadCount = 0;
@@ -269,12 +269,15 @@ class ProcessCollector : public BaseCollector {
 public:
     ProcessCollector();
 
-    int Init();
+    int Init(int totalCount=3);
+
     ~ProcessCollector() override = default;
 
     bool Collect(const HostMonitorTimerEvent::CollectConfig& collectConfig, PipelineEventGroup* group) override;
 
     static const std::string sName;
+
+    static const int mProcessSilentCount = 1000;
     const std::string& Name() const override { return sName; }
 
 private:
