@@ -224,6 +224,9 @@ struct ProcessAllStat {
 struct ProcessPushMertic {
     pid_t pid;
     std::string name;
+    std::string user;
+    std::string path;
+    std::string args;
     double cpuPercent = 0.0;
     double memPercent = 0.0;
     double fdNum = 0.0;
@@ -342,6 +345,7 @@ private:
     std::map<pid_t, double> mAvgProcessNumThreads;
     std::map<pid_t, double> mMinProcessNumThreads;
     std::map<pid_t, double> mMaxProcessNumThreads;
+    std::map<pid_t, std::string> pidNameMap;
 };
 
 } // namespace logtail
