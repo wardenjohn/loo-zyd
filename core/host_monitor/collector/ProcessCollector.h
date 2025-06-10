@@ -283,7 +283,7 @@ public:
     static const int mProcessSilentCount = 1000;
     const std::string& Name() const override { return sName; }
 
-private:
+public:
     bool GetPids(std::vector<pid_t>& pids);
 
     bool WalkAllDigitDirs(const std::filesystem::path& root, const std::function<void(const std::string&)>& callback);
