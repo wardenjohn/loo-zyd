@@ -27,6 +27,7 @@ target_link_libraries(cpu_collector_unittest ${UT_BASE_TARGET})
 add_executable(metric_calculate_unittest MetricCalculateUnittest.cpp)
 target_link_libraries(metric_calculate_unittest ${UT_BASE_TARGET})
 
+
 add_executable(system_interface_unittest SystemInterfaceUnittest.cpp)
 target_link_libraries(system_interface_unittest ${UT_BASE_TARGET})
 
@@ -34,6 +35,8 @@ if (LINUX)
     add_executable(linux_system_interface_unittest LinuxSystemInterfaceUnittest.cpp)
     target_link_libraries(linux_system_interface_unittest ${UT_BASE_TARGET})
 endif()
+add_executable(process_collector_unittest ProcessCollectorUnittest.cpp)
+target_link_libraries(process_collector_unittest ${UT_BASE_TARGET})
 
 include(GoogleTest)
 gtest_discover_tests(process_entity_collector_unittest)
@@ -44,3 +47,4 @@ gtest_discover_tests(system_interface_unittest)
 if (LINUX)
     gtest_discover_tests(linux_system_interface_unittest)
 endif()
+gtest_discover_tests(process_collector_unittest)
