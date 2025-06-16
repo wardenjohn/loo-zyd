@@ -39,6 +39,13 @@ private:
     bool GetCPUInformationOnce(CPUInformation& cpuInfo) override;
     bool GetProcessListInformationOnce(ProcessListInformation& processListInfo) override;
     bool GetProcessInformationOnce(pid_t pid, ProcessInformation& processInfo) override;
+    bool GetMemoryInformationStringOnce(MemoryInformationString& meminfoStr) override;
+    bool GetMTRRInformationStringOnce(MTRRInformationString& mtrrStr) override;
+    bool GetProcessCmdlineStringOnce(pid_t pid, ProcessCmdlineString& cmdline) override;
+    bool GetProcessStatmOnce(pid_t pid, ProcessMemoryInformation& processMemory) override;
+    bool GetProcessCredNameOnce(pid_t pid, ProcessCredName& processCredName) override;
+    bool GetExecutablePathOnce(pid_t pid, ProcessExecutePath &executePath) override;
+    bool GetProcessOpenFilesOnce(pid_t pid, ProcessFd &processFd) override;
 
     ProcParser mProcParser;
 };
