@@ -39,6 +39,7 @@ int64_t ToMillis(std::chrono::system_clock::time_point &t) {
 }
 
 #define Diff(a, b)  a-b>0 ? a-b : 0;
+#define PATH_MAX 4096
 
 //topN进行的缓存为55s
 const std::chrono::seconds ProcessSortInterval{55};
@@ -527,6 +528,18 @@ int ProcessCollector::GetProcessArgs(pid_t pid, std::vector<std::string> &args) 
     return EXECUTE_SUCCESS;
 }
 
+std::string ProcessCollector::GetExecutablePath(pid_t pid) { 
+    std::filesystem::path procExePath = PROCESS_DIR / std::to_string(pid) / PROCESS_EXE;
+    char buffer[PATH_MAX];
+    ssize_t len = readlink(procExePath.c_str(), buffer, sizeof(buffer));
+    if (len < 0) {
+        return {};
+    }
+    return {buffer, buffer + len};
+}
+
+// argus 的进程path是通过readlink /proc/pid/exe 获取的
+// args 是通过 /proc/pid/cmdline 获取的
 int ProcessCollector::GetProcessInfo(pid_t pid, ProcessInfo &processInfo) {
     std::string user = "unknown";
     ProcessCredName processCredName;
@@ -537,11 +550,13 @@ int ProcessCollector::GetProcessInfo(pid_t pid, ProcessInfo &processInfo) {
 
     std::vector<std::string> args;
     if (GetProcessArgs(pid, args) == EXECUTE_SUCCESS) {
-        processInfo.path = args.front();
+        processInfo.args = args.front();
         for (size_t i = 1; i < args.size(); ++i) {
             processInfo.args += " " + args[i];
         }
     }
+
+    processInfo.path = GetExecutablePath(pid);
 
     processInfo.pid = pid;
     processInfo.name = processCredName.name;
@@ -704,7 +719,7 @@ int ProcessCollector::GetProcessCpuInformation(pid_t pid, ProcessCpuInformation 
 
     // calculate cpuPercent = (thisTotal - prevTotal)/HZ;
     auto totalCPUDiff = static_cast<double>(information.total - prev->total) / GetSysHz();
-    information.percent = totalCPUDiff / static_cast<double>(timeDiff) * 100; //100%
+    information.percent = 100 * totalCPUDiff / (static_cast<double>(timeDiff)/ GetSysHz()); //100%
     cpuTimeCache[pid] = information;
 
     return EXECUTE_SUCCESS;

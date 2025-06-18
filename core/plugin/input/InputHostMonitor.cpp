@@ -20,13 +20,10 @@
 #include "common/ParamExtractor.h"
 #include "host_monitor/HostMonitorInputRunner.h"
 #include "host_monitor/collector/CPUCollector.h"
-<<<<<<< HEAD
 #include "host_monitor/collector/SystemCollector.h"
 #include "host_monitor/collector/MemCollector.h"
 #include "host_monitor/collector/NetCollector.h"
-=======
 #include "host_monitor/collector/ProcessCollector.h"
->>>>>>> bf51b67c (Add support to Process Collector)
 
 namespace logtail {
 
