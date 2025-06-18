@@ -165,6 +165,7 @@ bool ProcessCollector::Collect(const HostMonitorTimerEvent::CollectConfig& colle
 
     time_t now = time(nullptr);
 
+    // 获取每一个进程的信息
     std::vector<ProcessAllStat> allPidStats;
     for (auto pid : pids) {
         ProcessAllStat stat;
@@ -197,8 +198,10 @@ bool ProcessCollector::Collect(const HostMonitorTimerEvent::CollectConfig& colle
     }
 
     // set calculation
-    // 给每个pid设定其多值体系
+    // 为vmState添加多值计算
     mVMProcessNumStat.AddValue(processNumStat);
+    // 给每个pid推送对象设定其多值体系
+    // mProcessPushMertic是一个字典，key 为pid，对应的value为多值vector，里面存储了每一个pid的多值体系
     for (auto &metric : pushMerticList) {
         uint64_t thisPid = metric.pid;
         // auto met = mProcessPushMertic.find(thisPid);
@@ -565,6 +568,7 @@ int ProcessCollector::GetProcessFdNumber(pid_t pid, ProcessFd &processFd) {
 int ProcessCollector::GetProcessMemory(pid_t pid, ProcessMemoryInformation &processMemory) {
     std::string errorMessage;
     LinuxProcessInfo linuxProcessInfo;
+    char* endptr;
     int status = ReadProcessStat(pid, linuxProcessInfo);
     if (status != 0) {
         return status;
@@ -586,13 +590,12 @@ int ProcessCollector::GetProcessMemory(pid_t pid, ProcessMemoryInformation &proc
     }
 
     long pagesize = sysconf(_SC_PAGESIZE); // 获取系统页大小
-
     int index = 0;
-    processMemory.size = static_cast<uint64_t>(StringTo(processMemoryMetric[index++], processMemory.size));
+    processMemory.size = static_cast<uint64_t>(std::strtoull(processMemoryMetric[index++].c_str(), &endptr, 10));
     processMemory.size = processMemory.size * pagesize;
-    processMemory.resident = static_cast<uint64_t>(StringTo(processMemoryMetric[index++], processMemory.resident));
+    processMemory.resident = static_cast<uint64_t>(std::strtoull(processMemoryMetric[index++].c_str(), &endptr, 10)); 
     processMemory.resident = processMemory.resident * pagesize;
-    processMemory.share = static_cast<uint64_t>(StringTo(processMemoryMetric[index++], processMemory.share));
+    processMemory.share = static_cast<uint64_t>(std::strtoull(processMemoryMetric[index++].c_str(), &endptr, 10));
     processMemory.share = processMemory.share * pagesize;
 
     return EXECUTE_SUCCESS;
