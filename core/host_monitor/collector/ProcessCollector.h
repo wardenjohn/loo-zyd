@@ -318,6 +318,8 @@ public:
 
     double GetSysHz();
 
+    std::string GetExecutablePath(pid_t pid);
+
 protected:
 
     int GetProcessCpuInformation(pid_t pid, ProcessCpuInformation &information,bool includeCTime);
