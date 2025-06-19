@@ -20,9 +20,13 @@
 #include "common/ParamExtractor.h"
 #include "host_monitor/HostMonitorInputRunner.h"
 #include "host_monitor/collector/CPUCollector.h"
+<<<<<<< HEAD
 #include "host_monitor/collector/SystemCollector.h"
 #include "host_monitor/collector/MemCollector.h"
 #include "host_monitor/collector/NetCollector.h"
+=======
+#include "host_monitor/collector/ProcessCollector.h"
+>>>>>>> bf51b67c (Add support to Process Collector)
 
 namespace logtail {
 
@@ -125,7 +129,21 @@ bool InputHostMonitor::Init(const Json::Value& config, Json::Value& optionalGoPi
         mCollectors.push_back(NetCollector::sName);
     }
 
+    bool enableProcess = true;
+    if (!GetOptionalBoolParam(config, "EnableProcess", enableProcess, errorMsg)) {
+        PARAM_ERROR_RETURN(mContext->GetLogger(),
+                           mContext->GetAlarm(),
+                           errorMsg,
+                           sName,
+                           mContext->GetConfigName(),
+                           mContext->GetProjectName(),
+                           mContext->GetLogstoreName(),
+                           mContext->GetRegion());
+    }
 
+    if (enableProcess) {
+        mCollectors.push_back(ProcessCollector::sName);
+    }
     return true;
 }
 

@@ -20,7 +20,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
-
+#include <filesystem>
 #include "common/FileSystemUtil.h"
 #include "constants/EntityConstants.h"
 #include "host_monitor/Constants.h"
@@ -32,6 +32,20 @@ using namespace std::chrono;
 namespace logtail {
 
 bool GetHostSystemStatWithPath(vector<string>& lines, string& errorMessage, filesystem::path PROC_DIR) {
+    errorMessage.clear();
+    if (!CheckExistance(PROC_DIR)) {
+        errorMessage = "file does not exist: " + PROC_DIR.string();
+        return false;
+    }
+
+    int ret = GetFileLines(PROC_DIR, lines, true, &errorMessage);
+    if (ret != 0 || lines.empty()) {
+        return false;
+    }
+    return true;
+}
+
+bool GetHostSystemStatWithPath(vector<string>& lines, string& errorMessage,  filesystem::path PROC_DIR) {
     errorMessage.clear();
     if (!CheckExistance(PROC_DIR)) {
         errorMessage = "file does not exist: " + PROC_DIR.string();
