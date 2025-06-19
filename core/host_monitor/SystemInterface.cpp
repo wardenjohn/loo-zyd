@@ -112,6 +112,8 @@ bool SystemInterface::GetCPUCoreNumInformation(CpuCoreNumInformation& cpuCoreNum
             return this->GetCPUCoreNumInformationOnce(static_cast<CpuCoreNumInformation&>(info));
         },
         cpuCoreNumInfo,
+        errorType);
+}
 
 bool SystemInterface::GetHostMeminfoStatString(MemoryInformationString& meminfoString) {
     const std::string errorType = "mem";
