@@ -42,6 +42,9 @@ private:
     bool GetMemoryInformationStringOnce(MemoryInformationString& meminfoStr) override;
     bool GetMTRRInformationStringOnce(MTRRInformationString& mtrrStr) override;
 
+    bool GetSystemLoadInformationOnce(SystemLoadInformation& systemLoadInfo) override;
+    bool GetCPUCoreNumInformationOnce(CpuCoreNumInformation& cpuCoreNumInfo) override;
+
     ProcParser mProcParser;
 };
 } // namespace logtail
