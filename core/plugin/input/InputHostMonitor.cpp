@@ -21,11 +21,7 @@
 #include "host_monitor/HostMonitorInputRunner.h"
 #include "host_monitor/collector/CPUCollector.h"
 #include "host_monitor/collector/MemCollector.h"
-<<<<<<< HEAD
-=======
-#include "host_monitor/collector/NetCollector.h"
 #include "host_monitor/collector/ProcessCollector.h"
->>>>>>> 2646cfbc (Add support to ProcessCollector)
 
 namespace logtail {
 

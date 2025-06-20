@@ -110,6 +110,36 @@ bool SystemInterface::GetMTRRInformationString(MTRRInformationString& mtrrString
         errorType);
 }
 
+bool SystemInterface::GetProcessCmdlineString(pid_t pid, ProcessCmdlineString& processCmdlineString) {
+    const std::string errorType = "processCmdline";
+    return MemoizedCall(
+        mProcessCmdlineCache,
+        [this](BaseInformation& info, pid_t pid) { return this->GetProcessCmdlineStringOnce(pid, static_cast<ProcessCmdlineString&>(info)); },
+        processCmdlineString,
+        errorType,
+        pid);
+}
+
+bool SystemInterface::GetPorcessStatmString(pid_t pid, ProcessStatmString& processStatmString) {
+    const std::string errorType = "processStatm";
+    return MemoizedCall(
+        mProcessStatmCache,
+        [this](BaseInformation& info, pid_t pid) { return this->GetProcessStatmStringOnce(pid, static_cast<ProcessStatmString&>(info)); },
+        processStatmString,
+        errorType,
+        pid);
+}
+
+bool SystemInterface::GetProcessStatusString(pid_t pid, ProcessStatusString& processStatusString) {
+    const std::string errorType = "processStatus";
+    return MemoizedCall(
+        mProcessStatusCache,
+        [this](BaseInformation& info, pid_t pid) { return this->GetProcessStatusStringOnce(pid, static_cast<ProcessStatusString&>(info)); },
+        processStatusString,
+        errorType,
+        pid);
+}
+
 template <typename F, typename InfoT, typename... Args>
 bool SystemInterface::MemoizedCall(
     SystemInformationCache<InfoT, Args...>& cache, F&& func, InfoT& info, const std::string& errorType, Args... args) {

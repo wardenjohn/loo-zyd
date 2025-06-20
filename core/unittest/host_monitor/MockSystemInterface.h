@@ -87,6 +87,33 @@ private:
         return true;
     }
 
+    bool GetProcessCmdlineStringOnce(pid_t pid, ProcessCmdlineString& cmdline) {
+        if (mBlockTime > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(mBlockTime));
+        }
+        cmdline.collectTime = std::chrono::steady_clock::now();
+        ++mMockCalledCount;
+        return true;
+    }
+
+    bool GetProcessStatmStringOnce(pid_t pid, ProcessStatmString& processStatmStr) {
+        if (mBlockTime > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(mBlockTime));
+        }
+        processStatmStr.collectTime = std::chrono::steady_clock::now();
+        ++mMockCalledCount;
+        return true;
+    }
+
+    bool GetProcessStatusStringOnce(pid_t pid, ProcessStatusString& processStatusStr) {
+        if (mBlockTime > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(mBlockTime));
+        }
+        processStatusStr.collectTime = std::chrono::steady_clock::now();
+        ++mMockCalledCount;
+        return true;
+    }
+
     int64_t mBlockTime = 0;
     int64_t mMockCalledCount = 0;
 

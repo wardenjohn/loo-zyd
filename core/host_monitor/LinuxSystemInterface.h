@@ -41,6 +41,9 @@ private:
     bool GetProcessInformationOnce(pid_t pid, ProcessInformation& processInfo) override;
     bool GetMemoryInformationStringOnce(MemoryInformationString& meminfoStr) override;
     bool GetMTRRInformationStringOnce(MTRRInformationString& mtrrStr) override;
+    bool GetProcessCmdlineStringOnce(pid_t pid, ProcessCmdlineString& cmdline) override;
+    bool GetProcessStatmStringOnce(pid_t pid, ProcessStatmString& processStatmStr) override;
+    bool GetProcessStatusStringOnce(pid_t pid, ProcessStatusString& processStatusStr) override;
 
     ProcParser mProcParser;
 };

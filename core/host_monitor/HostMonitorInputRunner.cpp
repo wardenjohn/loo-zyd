@@ -38,11 +38,7 @@
 #include "host_monitor/collector/ProcessEntityCollector.h"
 #include "host_monitor/collector/MemCollector.h"
 #include "SystemInterface.h"
-<<<<<<< HEAD
-=======
-#include "host_monitor/collector/NetCollector.h"
 #include "host_monitor/collector/ProcessCollector.h"
->>>>>>> 2646cfbc (Add support to ProcessCollector)
 #include "logger/Logger.h"
 #include "models/MetricEvent.h"
 #include "models/PipelineEventGroup.h"
@@ -60,9 +56,7 @@ namespace logtail {
 HostMonitorInputRunner::HostMonitorInputRunner() {
     RegisterCollector<ProcessEntityCollector>();
     RegisterCollector<CPUCollector>();
-    RegisterCollector<SystemCollector>();
     RegisterCollector<MemCollector>();
-    RegisterCollector<NetCollector>();
     RegisterCollector<ProcessCollector>();
 
     size_t threadPoolSize = 1;

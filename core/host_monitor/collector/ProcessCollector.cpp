@@ -30,7 +30,8 @@
 #include "MetricValue.h"
 #include "common/StringTools.h"
 #include "host_monitor/Constants.h"
-#include "host_monitor/SystemInformationTools.h"
+#include "host_monitor/LinuxSystemInterface.h"
+#include "host_monitor/SystemInterface.h"
 #include "logger/Logger.h"
 #include "common/TimeUtil.h"
 
@@ -140,18 +141,15 @@ static double GetMemoryStat(std::vector<std::string>& memoryLines) {
 }
 
 int ProcessCollector::Init(int totalCount) {
-    std::vector<std::string> memLines;
-    std::string errorMessage;
+    MemoryInformationString meminfoStr;
 
-    if (!GetHostSystemStatWithPath(memLines, errorMessage, "/proc/meminfo")) {
-        LOG_WARNING(sLogger, ("failed to get system load", "invalid System collector")("error msg", errorMessage));
-        mTotalMemory = 0;
-        return -1;
+    if (!SystemInterface::GetInstance()->GetHostMeminfoStatString(meminfoStr)) {
+        return false;
     }
 
-    double totalMemory = GetMemoryStat(memLines);
+    double totalMemory = GetMemoryStat(meminfoStr.meminfoString);
     mTotalMemory = totalMemory;
-    mTotalCount = totalCount;
+    mCountPerReport = totalCount;
 
     return 0;
 }
@@ -165,6 +163,8 @@ bool ProcessCollector::Collect(const HostMonitorTimerEvent::CollectConfig& colle
     }
 
     time_t now = time(nullptr);
+
+    std::cout << "ProcessCollector::Collect()" << std::endl;
 
     // 获取每一个进程的信息
     std::vector<ProcessAllStat> allPidStats;
@@ -220,7 +220,7 @@ bool ProcessCollector::Collect(const HostMonitorTimerEvent::CollectConfig& colle
     }
 
     mCount++;
-    if (mCount < mTotalCount) {
+    if (mCount < mCountPerReport) {
         return true;
     }
 
@@ -424,21 +424,22 @@ void ProcessCollector::GetSelfPid(pid_t &pid, pid_t &ppid) {
 int ProcessCollector::GetProcessAllStat(pid_t pid, ProcessAllStat &processStat) {
     // 获取这个pid的cpu信息
     processStat.pid = pid;
+    
     int ret = GetProcessCpuInformation(pid, processStat.processCpu, false);
     if (ret != 0) {
         return ret;
     }
-
+    
     ret = GetProcessState(pid, processStat.processState);
     if (ret != 0) {
         return ret;
     }
-
+    
     ret = GetProcessMemory(pid, processStat.processMemory);
     if (ret != 0) {
         return ret;
     }
-
+    
     ProcessFd procFd;
     ret = GetProcessFdNumber(pid, procFd);
     if (ret != EXECUTE_SUCCESS) {
@@ -446,7 +447,7 @@ int ProcessCollector::GetProcessAllStat(pid_t pid, ProcessAllStat &processStat) 
     }
     processStat.fdNum = procFd.total;
     processStat.fdNumExact = procFd.exact;
-
+    
     ret = GetProcessInfo(pid, processStat.processInfo);
     if (ret != EXECUTE_SUCCESS) {
         return ret;
@@ -457,17 +458,15 @@ int ProcessCollector::GetProcessAllStat(pid_t pid, ProcessAllStat &processStat) 
 }
 
 int ProcessCollector::GetProcessCredName(pid_t pid,ProcessCredName &processCredName) {
-    std::vector<std::string> processStatusLines = {};
-    std::string errorMessage;
-    std::filesystem::path path = PROCESS_DIR / std::to_string(pid) / PROCESS_STATUS;
-    if (!GetHostSystemStatWithPath(processStatusLines, errorMessage, path)
-        || processStatusLines.size() < 2) {
+    ProcessStatusString processStatusStr;
+    
+    if (!SystemInterface::GetInstance()->GetProcessStatusString(pid, processStatusStr)) {
         return EXECUTE_FAIL;
     }
 
     ProcessCred cred{};
-    for (size_t i = 0; i < processStatusLines.size(); ++i) {
-        auto metric = split(processStatusLines[i], '\t', false);
+    for (size_t i = 0; i < processStatusStr.processStatusString.size(); ++i) {
+        auto metric = split(processStatusStr.processStatusString[i], '\t', false);
         if (metric.front() == "Name:") {
             processCredName.name = metric[1];
         }
@@ -508,19 +507,17 @@ int ProcessCollector::GetProcessCredName(pid_t pid,ProcessCredName &processCredN
 }
 
 int ProcessCollector::GetProcessArgs(pid_t pid, std::vector<std::string> &args) {
-    std::vector<std::string> args_content;
     std::string cmdline;
-    std::string errorMessage;
-    std::filesystem::path procArgsPath = PROCESS_DIR / std::to_string(pid) / PROCESS_CMDLINE;
-    GetHostSystemStatWithPath(args_content, errorMessage, procArgsPath);
-    if (args_content.empty()) {
+    
+    ProcessCmdlineString processCMDline;
+    if (!SystemInterface::GetInstance()->GetProcessCmdlineString(pid, processCMDline)) {
+        return EXECUTE_FAIL;
+    }
+    if (processCMDline.cmdline.empty()) {
         // /proc/pid/cmdline have no content
         return EXECUTE_FAIL;
     }
-    cmdline = args_content.front();
-    if (cmdline.empty()) {
-        return errorMessage.empty() ? EXECUTE_FAIL : EXECUTE_SUCCESS;
-    }
+    cmdline = processCMDline.cmdline.front();
     auto cmdlineMetric = split(cmdline, ' ', {false, true});
     for (auto const &metric: cmdlineMetric) {
         args.push_back(metric);
@@ -581,24 +578,23 @@ int ProcessCollector::GetProcessFdNumber(pid_t pid, ProcessFd &processFd) {
 
 // 获取pid的内存信息
 int ProcessCollector::GetProcessMemory(pid_t pid, ProcessMemoryInformation &processMemory) {
-    std::string errorMessage;
-    LinuxProcessInfo linuxProcessInfo;
+    ProcessStat processStat;
     char* endptr;
-    int status = ReadProcessStat(pid, linuxProcessInfo);
+    int status = ReadProcessStat(pid, processStat);
     if (status != 0) {
         return status;
     }
-    processMemory.minorFaults = linuxProcessInfo.minorFaults;
-    processMemory.majorFaults = linuxProcessInfo.majorFaults;
-    processMemory.pageFaults = linuxProcessInfo.minorFaults + linuxProcessInfo.majorFaults;
-
-    const auto procStatm = PROCESS_DIR / std::to_string(pid) / PROCESS_STATM;
+    processMemory.minorFaults = processStat.minorFaults;
+    processMemory.majorFaults = processStat.majorFaults;
+    processMemory.pageFaults = processStat.minorFaults + processStat.majorFaults;
 
     std::vector<std::string> loadLines;
-
-    if (!GetHostSystemStatWithPath(loadLines, errorMessage, procStatm)) {
+    ProcessStatmString processStatm;
+    if (!SystemInterface::GetInstance()->GetPorcessStatmString(pid, processStatm)) {
         return EXECUTE_FAIL;
     }
+
+    loadLines = processStatm.processStatmString;
     std::vector<std::string> processMemoryMetric = split((loadLines.empty() ? "" : loadLines.front()), ' ', false);
     if (processMemoryMetric.size() < 3) {
         return EXECUTE_FAIL;
@@ -618,19 +614,20 @@ int ProcessCollector::GetProcessMemory(pid_t pid, ProcessMemoryInformation &proc
 
 //获取pid的状态信息
 int ProcessCollector::GetProcessState(pid_t pid, ProcessStat &processState) {
-    LinuxProcessInfo linuxProcessInfo;
-    int status = ReadProcessStat(pid, linuxProcessInfo);
+    ProcessInformation processInfo;
+
+    int status = ReadProcessStat(pid, processInfo.stat);
     if (status != 0) {
         return status;
     }
 
-    processState.state = linuxProcessInfo.state;
-    processState.tty = linuxProcessInfo.tty;
-    processState.parentPid = linuxProcessInfo.parentPid;
-    processState.priority = linuxProcessInfo.priority;
-    processState.nice = linuxProcessInfo.nice;
-    processState.processor = linuxProcessInfo.processor;
-    processState.numThreads = linuxProcessInfo.numThreads;
+    processState.state = processInfo.stat.state;
+    processState.tty = processInfo.stat.tty;
+    processState.parentPid = processInfo.stat.parentPid;
+    processState.priority = processInfo.stat.priority;
+    processState.nice = processInfo.stat.nice;
+    processState.processor = processInfo.stat.processor;
+    processState.numThreads = processInfo.stat.numThreads;
 
     return EXECUTE_SUCCESS;
 }
@@ -678,19 +675,19 @@ int ProcessCollector::GetProcessCpuInformation(pid_t pid, ProcessCpuInformation 
     const auto now = std::chrono::steady_clock::now();
     bool findCache = false;
     ProcessCpuInformation* prev = nullptr;
-
+    
     // 由于计算CPU时间需要获取一个时间间隔
     // 但是我们这里不应该睡眠，因此只能做一个cache，保存上一次获取的数据
     findCache = GetProcessCpuInCache(pid, includeCTime);
-
+    
     information.lastTime = now;
     ProcessTime processTime{};
     int res = GetProcessTime(pid, processTime, includeCTime);
-
+    
     if (res != EXECUTE_SUCCESS) {
         return EXECUTE_FAIL;
     }
-
+    
     if (findCache) {
         // cache found, calculate the cpu percent
         auto recordedEntity = cpuTimeCache.find(pid);
@@ -706,104 +703,80 @@ int ProcessCollector::GetProcessCpuInformation(pid_t pid, ProcessCpuInformation 
          cpuTimeCache[pid] = information;
          return 0;
     }
-
+    
     int64_t timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(now - prev->lastTime).count(); 
 
     // update the cache
     using namespace std::chrono;
-    information.startTime = ToMillis(processTime.startTime);
+    information.startTime = processTime.startTime;
     information.lastTime = now;
     information.user = processTime.user.count();
     information.sys = processTime.sys.count();
     information.total = processTime.total.count();
-
+    std::cout << "1.6" << std::endl;
     // calculate cpuPercent = (thisTotal - prevTotal)/HZ;
     auto totalCPUDiff = static_cast<double>(information.total - prev->total) / GetSysHz();
     information.percent = 100 * totalCPUDiff / (static_cast<double>(timeDiff)/ GetSysHz()); //100%
     cpuTimeCache[pid] = information;
-
+    std::cout << "1.7" << std::endl;
     return EXECUTE_SUCCESS;
 }
 
 int ProcessCollector::GetProcessTime(pid_t pid, ProcessTime &output, bool includeCTime) {
-    LinuxProcessInfo processInfo{};
-    int stat = ReadProcessStat(pid, processInfo);
+    ProcessInformation processInfo;
+    
+    int stat = ReadProcessStat(pid, processInfo.stat);
     if (stat != EXECUTE_SUCCESS) {
         return stat;
     }
+    
+    output.startTime = processInfo.stat.startTicks;
 
-    output.startTime = processInfo.startTime;
-
-    output.cutime = processInfo.cutime;
-    output.cstime = processInfo.cstime;
-    output.user = processInfo.utime + output.cutime;
-    output.sys = processInfo.stime + output.cstime;
-
-    output.total = output.user + output.sys;
+    output.cutime = std::chrono::milliseconds(processInfo.stat.cutimeTicks);
+    output.cstime = std::chrono::milliseconds(processInfo.stat.cstimeTicks);
+    output.user = std::chrono::milliseconds(processInfo.stat.utimeTicks + processInfo.stat.cutimeTicks);
+    output.sys = std::chrono::milliseconds(processInfo.stat.stimeTicks + processInfo.stat.cstimeTicks);
+    
+    output.total = std::chrono::milliseconds(output.user + output.sys);
 
     return EXECUTE_SUCCESS;
 }
 
 // 数据样例: /proc/1/stat, 解析/proc/pid/stat
 // 1 (cat) R 0 1 1 34816 1 4194560 1110 0 0 0 1 1 0 0 20 0 1 0 18938584 4505600 171 18446744073709551615 4194304 4238788 140727020025920 0 0 0 0 0 0 0 0 0 17 3 0 0 0 0 0 6336016 6337300 21442560 140727020027760 140727020027777 140727020027777 140727020027887 0
-int ProcessCollector::ReadProcessStat(pid_t pid, LinuxProcessInfo &processInfo) {
-    processInfo.pid = pid;
+int ProcessCollector::ReadProcessStat(pid_t pid, ProcessStat &processStat) {
+    processStat.pid = pid;
 
     std::vector<std::string> loadLines;
     std::string first_line;
-    std::string errorMessage;
-    std::filesystem::path statPath = PROCESS_DIR / std::to_string(pid) / PROCESS_STAT;
-
-    if (!GetHostSystemStatWithPath(loadLines, errorMessage, statPath)) {
-        if (mValidState) {
-            LOG_WARNING(sLogger, ("failed to get system load", "invalid System collector")("error msg", errorMessage));
-            mValidState = false;
-        }
+    
+    ProcessInformation processInfo{};
+    if (!SystemInterface::GetInstance()->GetProcessInformation(pid, processInfo)) {
         return EXECUTE_FAIL;
     }
+    
+    processStat.name = processInfo.stat.name;
 
-    first_line = loadLines.front();
-    auto nameStartPos = first_line.find_first_of('(');
-    auto nameEndPos = first_line.find_last_of(')');
+    processStat.state = processInfo.stat.state;
+    processStat.parentPid = processInfo.stat.parentPid;
+    processStat.priority = processInfo.stat.priority;
+    processStat.nice = processInfo.stat.nice;
+    processStat.numThreads = processInfo.stat.numThreads;
+    processStat.tty = processInfo.stat.tty;
+    processStat.minorFaults = processInfo.stat.minorFaults;
+    processStat.majorFaults = processInfo.stat.majorFaults;
 
-    if (nameStartPos == std::string::npos || nameEndPos == std::string::npos) {
-        return EXECUTE_FAIL;
-    }
+    processStat.utimeTicks = processInfo.stat.utimeTicks;
+    processStat.stimeTicks = processInfo.stat.stimeTicks;
+    processStat.cutimeTicks = processInfo.stat.cutimeTicks;
+    processStat.cstimeTicks = processInfo.stat.cstimeTicks;
 
-    nameStartPos++; // 跳过左括号
-    processInfo.name = first_line.substr(nameStartPos, nameEndPos - nameStartPos);
-    first_line = first_line.substr(nameEndPos + 2); // 跳过右括号及空格
-
-    std::vector<std::string> words = split(first_line, ' ', false);
-
-    const EnumProcessStat offset = EnumProcessStat::state;  // 跳过pid, comm
-    const int minCount = EnumProcessStat::processor - offset + 1;  // 37
-
-    if (words.size() < minCount) {
-        return EXECUTE_FAIL;
-    }
-
-    TVector<EnumProcessStat> v{words, offset};
-
-    processInfo.state = v[EnumProcessStat::state].front();
-    processInfo.parentPid = static_cast<pid_t>(atoi(v[EnumProcessStat::ppid].c_str()));
-    processInfo.priority = static_cast<int>(atoi(v[EnumProcessStat::priority].c_str()));
-    processInfo.nice = static_cast<int>(atoi(v[EnumProcessStat::nice].c_str()));
-    processInfo.numThreads = static_cast<int>(atoi(v[EnumProcessStat::num_threads].c_str()));
-    processInfo.tty = static_cast<int>(atoi(v[EnumProcessStat::tty_nr].c_str()));
-    processInfo.minorFaults = static_cast<uint64_t>(atoi(v[EnumProcessStat::minflt].c_str()));
-    processInfo.majorFaults = static_cast<uint64_t>(atoi(v[EnumProcessStat::majflt].c_str()));
-
-    MillisVector<milliseconds, EnumProcessStat> mv{v};
-    processInfo.utime = mv[EnumProcessStat::utime];
-    processInfo.stime = mv[EnumProcessStat::stime];
-    processInfo.cutime = mv[EnumProcessStat::cutime];
-    processInfo.cstime = mv[EnumProcessStat::cstime];
-
-    processInfo.startTime = std::chrono::system_clock::time_point{mv[EnumProcessStat::starttime]}; // for testing
-    processInfo.vSize = static_cast<uint64_t>(atoi(v[EnumProcessStat::vsize].c_str()));
-    processInfo.rss = static_cast<uint64_t>(atoi(v[EnumProcessStat::rss].c_str()));
-    processInfo.processor = static_cast<int>(atoi(v[EnumProcessStat::processor].c_str()));
+    // startTicks is int64_t type
+    processStat.startTicks = processInfo.stat.startTicks;
+    std::cout << processStat.pid << ":::" << processStat.startTicks << std::endl;
+    processStat.vSize = processInfo.stat.vSize;
+    processStat.rss = processInfo.stat.rss;
+    processStat.processor = processInfo.stat.processor;
 
     return EXECUTE_SUCCESS;
 }
