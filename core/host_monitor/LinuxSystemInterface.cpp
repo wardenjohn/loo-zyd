@@ -207,4 +207,64 @@ bool LinuxSystemInterface::GetMTRRInformationStringOnce(MTRRInformationString& m
     return true;
 }
 
+
+bool LinuxSystemInterface::GetProcessCmdlineStringOnce(pid_t pid, ProcessCmdlineString& cmdline) {
+    auto processCMDline = PROCESS_DIR / std::to_string(pid) / PROCESS_CMDLINE;
+    cmdline.cmdline.clear();
+
+    std::ifstream file(static_cast<std::string>(processCMDline));
+
+    if (!file.is_open()) {
+        LOG_ERROR(sLogger, ("open process cmdline file", "fail")("file", processCMDline));
+        return false;
+    }
+    
+    std::string line;
+    while (std::getline(file, line)) {
+        cmdline.cmdline.push_back(line);
+    }
+
+    file.close();
+
+    return true;
+}
+
+bool LinuxSystemInterface::GetProcessStatmStringOnce(pid_t pid, ProcessStatmString& processStatmStr) { 
+    auto processStatm = PROCESS_DIR / std::to_string(pid) / PROCESS_STATM;
+    processStatmStr.processStatmString.clear();
+
+    std::ifstream file(static_cast<std::string>(processStatm));
+
+    if (!file.is_open()) {
+        LOG_ERROR(sLogger, ("open process statm file", "fail")("file", processStatm));
+        return false;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        processStatmStr.processStatmString.push_back(line);
+    }
+    file.close();
+    return true;
+}
+
+bool LinuxSystemInterface::GetProcessStatusStringOnce(pid_t pid, ProcessStatusString& processStatusStr) {
+    auto processStatus = PROCESS_DIR / std::to_string(pid) / PROCESS_STATUS;
+    processStatusStr.processStatusString.clear();
+
+    std::ifstream file(static_cast<std::string>(processStatus));
+
+    if (!file.is_open()) {
+        LOG_ERROR(sLogger, ("open process status file", "fail")("file", processStatus));
+    }
+
+    std::string line;
+    while (std::getline(file, line))
+    {
+        processStatusStr.processStatusString.push_back(line);
+    }
+    file.close();
+    return true;
+    
+}
 } // namespace logtail

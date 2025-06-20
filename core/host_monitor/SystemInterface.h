@@ -73,6 +73,155 @@ struct CPUStat {
     double guestNice;
 };
 
+struct tagPidTotal {
+    pid_t pid = 0;
+    uint64_t total = 0;
+
+    tagPidTotal() = default;
+
+    tagPidTotal(pid_t p, uint64_t t) : pid(p), total(t) {}
+};
+
+// 单进程CPU信息
+struct ProcessCpuInformation {
+    int64_t startTime = 0;
+    std::chrono::steady_clock::time_point lastTime;
+    uint64_t user = 0;
+    uint64_t sys = 0;
+    uint64_t total = 0;
+    double percent = 0.0;
+};
+
+struct ProcessTime {
+    int64_t startTime;
+    std::chrono::milliseconds cutime{0};
+    std::chrono::milliseconds cstime{0};
+
+    std::chrono::milliseconds user{0}; // utime + cutime
+    std::chrono::milliseconds sys{0}; // stime + cstime
+
+    std::chrono::milliseconds total{0}; // user + sys
+
+    std::chrono::milliseconds utime() const {
+        return user - cutime;
+    }
+
+    std::chrono::milliseconds stime() const {
+        return sys - cstime;
+    }
+};
+
+struct ProcessCpuInformationCache {
+    ProcessCpuInformation processCpu;
+    std::chrono::steady_clock::time_point expireTime;
+};
+
+struct CpuInformationCache {
+    pid_t pid;
+    std::chrono::steady_clock::time_point recordTimestamp;
+    uint16_t cpuTime;
+};
+
+struct ProcessInfo {
+        pid_t pid;
+        std::string name;
+        std::string path;
+        std::string cwd;
+        std::string root;
+        std::string args;
+        std::string user;
+};
+
+struct ProcessMemoryInformation {
+    uint64_t size = 0;
+    uint64_t resident = 0;
+    uint64_t share = 0;
+    uint64_t minorFaults = 0;
+    uint64_t majorFaults = 0;
+    uint64_t pageFaults = 0;
+};
+
+// 进程打开文件数
+struct ProcessFd {
+    uint64_t total = 0;
+    bool exact = true;  // total是否是一个精确值，在Linux下进程打开文件数超10,000时，将不再继续统计，以防出现性能问题
+};
+
+struct ProcessCredName {
+    std::string user;
+    std::string group;
+    std::string name;
+    uid_t uid;   //real user ID
+    gid_t gid;   //real group ID
+    uid_t euid;  //effective user ID
+    gid_t egid;  //effective group ID
+};
+
+struct ProcessCred {
+    uid_t uid;   //real user ID
+    gid_t gid;   //real group ID
+    uid_t euid;  //effective user ID
+    gid_t egid;  //effective group ID
+};
+
+struct ProcessAllStat {
+    pid_t pid;
+    ProcessStat processState;
+    ProcessInfo processInfo;
+    ProcessCpuInformation processCpu;
+    ProcessMemoryInformation processMemory;
+    double memPercent = 0.0;
+    uint64_t fdNum = 0;
+    bool fdNumExact = true;
+};
+
+struct ProcessPushMertic {
+    pid_t pid;
+    std::string name;
+    std::string user;
+    std::string path;
+    std::string args;
+    double cpuPercent = 0.0;
+    double memPercent = 0.0;
+    double fdNum = 0.0;
+    double numThreads  = 0.0;
+    double allNumProcess = 0.0;
+
+    static inline const FieldName<ProcessPushMertic> processPushMerticFields[] = {
+        FIELD_ENTRY(ProcessPushMertic, cpuPercent),
+        FIELD_ENTRY(ProcessPushMertic, memPercent),
+        FIELD_ENTRY(ProcessPushMertic, fdNum),
+        FIELD_ENTRY(ProcessPushMertic, numThreads),
+        FIELD_ENTRY(ProcessPushMertic, allNumProcess),
+    };
+
+    static void enumerate(const std::function<void(const FieldName<ProcessPushMertic, double>&)>& callback) {
+        for (const auto& field : processPushMerticFields) {
+            callback(field);
+        }
+    }
+};
+
+struct VMProcessNumStat {
+    double vmProcessNum = 0;
+
+    static inline const FieldName<VMProcessNumStat> vmProcessNumStatMerticFields[] = {
+        FIELD_ENTRY(VMProcessNumStat, vmProcessNum),
+    };
+
+    static void enumerate(const std::function<void(const FieldName<VMProcessNumStat, double>&)>& callback) {
+        for (const auto& field : vmProcessNumStatMerticFields) {
+            callback(field);
+        }
+    }
+};
+
+struct SystemTaskInfo {
+    uint64_t threadCount = 0;
+    uint64_t processCount = 0;
+    uint64_t zombieProcessCount = 0;
+};
+
 struct CPUInformation : public BaseInformation {
     std::vector<CPUStat> stats;
 };
@@ -102,6 +251,21 @@ struct MemoryInformationString : public BaseInformation {
 
 struct MTRRInformationString : public BaseInformation {
     std::vector<std::string> mtrrString;
+};
+
+// /proc/pid/status 
+struct ProcessStatusString : public BaseInformation {
+    std::vector<std::string> processStatusString;
+};
+
+// /proc/pid/cmdline
+struct ProcessCmdlineString : public BaseInformation {
+    std::vector<std::string> cmdline;
+};
+
+// /proc/pid/statm
+struct ProcessStatmString : public BaseInformation {
+    std::vector<std::string> processStatmString;
 };
 
 struct MemoryInformation {
@@ -213,6 +377,9 @@ public:
     bool GetProcessInformation(pid_t pid, ProcessInformation& processInfo);
     bool GetHostMeminfoStatString(MemoryInformationString& meminfoString);
     bool GetMTRRInformationString(MTRRInformationString& mtrrString);
+    bool GetProcessCmdlineString(pid_t pid, ProcessCmdlineString& cmdline);
+    bool GetPorcessStatmString(pid_t pid, ProcessStatmString& processStatmString);
+    bool GetProcessStatusString(pid_t pid, ProcessStatusString& processStatusString);
 
     explicit SystemInterface(std::chrono::milliseconds ttl
                              = std::chrono::milliseconds{INT32_FLAG(system_interface_default_cache_ttl)})
@@ -221,7 +388,10 @@ public:
           mProcessListInformationCache(ttl),
           mProcessInformationCache(ttl),
           mMemInformationCache(ttl),
-          mMTRRInformationCache(ttl) {}
+          mMTRRInformationCache(ttl),
+          mProcessCmdlineCache(ttl),
+          mProcessStatmCache(ttl),
+          mProcessStatusCache(ttl) {}
 
     virtual ~SystemInterface() = default;
 
@@ -239,6 +409,9 @@ private:
     virtual bool GetProcessInformationOnce(pid_t pid, ProcessInformation& processInfo) = 0;
     virtual bool GetMemoryInformationStringOnce(MemoryInformationString& meminfoStr) = 0;
     virtual bool GetMTRRInformationStringOnce(MTRRInformationString& mtrrStr) = 0;
+    virtual bool GetProcessCmdlineStringOnce(pid_t pid, ProcessCmdlineString& cmdline) = 0;
+    virtual bool GetProcessStatmStringOnce(pid_t pid, ProcessStatmString& processStatmStr) = 0;
+    virtual bool GetProcessStatusStringOnce(pid_t pid, ProcessStatusString& processStatusStr) = 0;
 
     SystemInformation mSystemInformationCache;
     SystemInformationCache<CPUInformation> mCPUInformationCache;
@@ -246,6 +419,9 @@ private:
     SystemInformationCache<ProcessInformation, pid_t> mProcessInformationCache;
     SystemInformationCache<MemoryInformationString> mMemInformationCache;
     SystemInformationCache<MTRRInformationString> mMTRRInformationCache;
+    SystemInformationCache<ProcessCmdlineString, pid_t> mProcessCmdlineCache;
+    SystemInformationCache<ProcessStatmString, pid_t> mProcessStatmCache;
+    SystemInformationCache<ProcessStatusString, pid_t> mProcessStatusCache;
 
 #ifdef APSARA_UNIT_TEST_MAIN
     friend class SystemInterfaceUnittest;

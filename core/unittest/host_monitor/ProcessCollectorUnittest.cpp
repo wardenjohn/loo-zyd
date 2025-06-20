@@ -89,19 +89,20 @@ protected:
         ofs << "nonvoluntary_ctxt_switches:     3\n";
         ofs.close();
         // /proc/pid/statm
-        ofstream ofs("./12345/statm", std::ios::trunc);
-        ofs << "416988 46661 13498 12061 0 160061 0\n";
-        ofs.close();
+        ofstream ofs_stam("./12345/statm", std::ios::trunc);
+        ofs_stam << "416988 46661 13498 12061 0 160061 0\n";
+        ofs_stam.close();
         // /proc/pid/stat
-        ofstream ofs("./12345/stat", std::ios::trunc);
-        ofs << "1813 (ilogtail) S 1811 1811 1811 0 -1 1077936192 1378102 0 848 0 643169 334268 0 0 20 0 55 0 1304 1707982848 46314 18446744073709551615 4227072 53627809 140730946407792 0 0 0 65536 0 4281570 0 0 0 17 26 0 0 24 0 0 66246848 67456896 101158912 140730946416312 140730946416341 140730946416341 140730946416603 0";
-        ofs.close();
+        ofstream ofs_stat("./12345/stat", std::ios::trunc);
+        ofs_stat << "1813 (ilogtail) S 1811 1811 1811 0 -1 1077936192 1378102 0 848 0 643169 334268 0 0 20 0 55 0 1304 1707982848 46314 18446744073709551615 4227072 53627809 140730946407792 0 0 0 65536 0 4281570 0 0 0 17 26 0 0 24 0 0 66246848 67456896 101158912 140730946416312 140730946416341 140730946416341 140730946416603 0";
+        ofs_stat.close();
         PROCESS_DIR = ".";
     }
 };
 
 void ProcessCollectorUnittest::TestGetHostPidStat() const {
     auto collector = ProcessCollector();
+    pid_t pid = 12345;
     ProcessAllStat stat;
     APSARA_TEST_TRUE(collector.GetProcessAllStat(pid, stat));
     
@@ -118,7 +119,7 @@ void ProcessCollectorUnittest::TestCollect() const {
     
 }
 
-UNIT_TEST_CASE(ProcessCollectorUnittest, TestGetHostSystemCPUStat);
+UNIT_TEST_CASE(ProcessCollectorUnittest, TestGetHostPidStat);
 UNIT_TEST_CASE(ProcessCollectorUnittest, TestCollect);
 
 } // namespace logtail
