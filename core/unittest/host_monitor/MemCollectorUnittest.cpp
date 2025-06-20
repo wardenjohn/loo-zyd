@@ -117,27 +117,44 @@ void MemCollectorUnittest::TestCollect() const {
     APSARA_TEST_TRUE(collector.Collect(collectConfig, &group));
     APSARA_TEST_TRUE(collector.Collect(collectConfig, &group));
     APSARA_TEST_TRUE(collector.Collect(collectConfig, &group));
+    APSARA_TEST_EQUAL_FATAL(1UL, group.GetEvents().size());
+    
     double total=31534908.0;
     double actual_free = 28771376.0;
     double free_percent = actual_free*100.0/total;
-    vector<double> expectedValues = {(31534908-28771376)*1024.0,
-                                (31534908-28771376)*1024.0,
-                                (static_cast<double>(31534908-28771376)/static_cast<double>(31534908))*100.0,
-                                free_percent};
-
-    vector<string> expectedNames = {
-        "memory_usedspace",
-        "memory_actualusedspace", 
-        "memory_usedutilization", 
-        "memory_freeutilization",
+    vector<double> expectedValues = {
+        (31534908-13226912)*1024.0,
+        (31534908-28771376)*1024.0,
+        (static_cast<double>(31534908-28771376)/static_cast<double>(31534908))*100.0,
+        free_percent,
+        31534908*1024.0
     };
 
+    vector<string> expectedNames = {
+        "memory_usedspace_min",
+        "memory_usedspace_max",
+        "memory_usedspace_avg",
+        "memory_actualusedspace_min", 
+        "memory_actualusedspace_max", 
+        "memory_actualusedspace_avg", 
+        "memory_usedutilization_min", 
+        "memory_usedutilization_max",
+        "memory_usedutilization_avg",
+        "memory_freeutilization_min",
+        "memory_freeutilization_max",
+        "memory_freeutilization_avg",
+        "memory_totalspace_min",
+        "memory_totalspace_max",
+        "memory_totalspace_avg",
+    };
     auto event = group.GetEvents()[0].Cast<MetricEvent>();
     auto maps = event.GetValue<UntypedMultiDoubleValues>()->mValues;
-    for (size_t i = 0; i < 16; ++i) {
+
+    
+    for (size_t i = 0; i < expectedNames.size(); i++) {
         APSARA_TEST_TRUE(maps.find(expectedNames[i]) != maps.end());
         double val = maps[expectedNames[i]].Value;
-        EXPECT_NEAR(expectedValues[static_cast<size_t>(i / 3)], val, 1e-6);
+        EXPECT_NEAR(expectedValues[static_cast<double>(i / 3)], val, 1e-6);
     }
 
 }
