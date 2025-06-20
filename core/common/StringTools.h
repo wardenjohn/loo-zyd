@@ -30,6 +30,8 @@
 
 #include "common/StringView.h"
 
+inline constexpr char SPACE_CHARS[] = " \f\n\r\t\v";
+
 namespace logtail {
 
 inline bool StartWith(const std::string& input, StringView pattern) {
